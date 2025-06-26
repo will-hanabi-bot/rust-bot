@@ -184,7 +184,7 @@ impl<'de> Deserialize<'de> for PerformAction {
 		let s = Value::deserialize(deserializer)?;
 		match s {
 			Value::Object(ref map) => {
-				let table_id = map.get("tableID").map(|v| v.to_string().parse().unwrap());
+				let table_id = map.get("tableID").map(|v| v.to_string().parse().unwrap_or(0));
 				let target = map.get("target").unwrap().to_string().parse().unwrap();
 
 				match map.get("type").unwrap() {

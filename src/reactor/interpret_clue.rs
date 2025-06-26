@@ -84,7 +84,14 @@ impl Reactor {
 
 		if *receiver == state.our_player_index {
 			let focus_slot = state.hands[*receiver].iter().position(|o| o == focus).unwrap() + 1;
-			common.waiting.push(WaitingConnection { giver: *giver, reacter, receiver: *receiver, clue: *clue, focus_slot });
+			common.waiting.push(WaitingConnection {
+				giver: *giver,
+				reacter,
+				receiver: *receiver,
+				receiver_hand: state.hands[*receiver].clone(),
+				clue: *clue,
+				focus_slot
+			});
 			return ClueInterp::Reactive;
 		}
 
@@ -271,7 +278,7 @@ impl Reactor {
 
 		let meta = &mut game.meta[hand[target_index]];
 		meta.status = CardStatus::CalledToDiscard;
-		meta.focused = true;
+		meta.trash = true;
 		ClueInterp::RefDiscard
 	}
 }

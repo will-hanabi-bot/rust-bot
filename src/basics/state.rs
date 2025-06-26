@@ -77,6 +77,10 @@ impl State {
 		self.pace() < self.num_players as i32
 	}
 
+	pub fn last_player_index(&self, player_index: usize) -> usize {
+		(player_index + self.num_players - 1) % self.num_players
+	}
+
 	pub fn next_player_index(&self, player_index: usize) -> usize {
 		(player_index + 1) % self.num_players
 	}

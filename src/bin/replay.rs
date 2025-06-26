@@ -2,7 +2,7 @@ use rust_bot::command::BotClient;
 use tokio::sync::mpsc;
 use serde::Deserialize;
 use std::future::pending;
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env, fs, sync::Arc};
 
 use rust_bot::basics::action::{Action, DrawAction, GameOverAction, PerformAction, TurnAction};
 use rust_bot::basics::{card::Identity, game::Game, state::State, variant::VariantManager, util};
@@ -10,8 +10,9 @@ use rust_bot::console::{self, DebugCommand};
 use rust_bot::{logger, reactor::Reactor};
 
 struct Args {
-	id: usize,
-	index: usize
+	id: Option<usize>,
+	index: usize,
+	file: Option<String>
 }
 
 impl Args {
@@ -30,13 +31,19 @@ impl Args {
 			hash_map.insert(key.to_string(), value.to_string());
 		}
 
-		if hash_map.contains_key("id") && hash_map.contains_key("index") {
-			let id = hash_map["id"].parse().unwrap();
+		if hash_map.contains_key("index") {
+			let id = hash_map.get("id").and_then(|e| e.parse().ok());
 			let index = hash_map["index"].parse().unwrap();
-			Self { id, index }
+			let file = hash_map.get("file").cloned();
+
+			if id.is_none() && file.is_none() {
+				panic!("Must provide either id or file argument.");
+			}
+
+			Self { id, index, file }
 		}
 		else {
-			panic!("Missing required arguments");
+			panic!("Missing required argument 'index'!");
 		}
 	}
 }
@@ -60,15 +67,23 @@ impl GameData {
 			.text().await.expect("Failed to parse variants response.");
 		serde_json::from_str(&data).expect("Failed to deserialize game data")
 	}
+
+	fn from_file(file: String) -> Self {
+		let data = fs::read_to_string(file).expect("Failed to read file");
+		serde_json::from_str(&data).expect("Failed to deserialize game data")
+	}
 }
 
 #[tokio::main]
 async fn main() {
 	let args = env::args().collect::<Vec<String>>();
-	let Args { id, index } = Args::parse(&args[1..]);
+	let Args { id, index, file } = Args::parse(&args[1..]);
 	let _ = logger::init();
 
-	let GameData { players, deck, actions, options } = GameData::fetch(id).await;
+	let GameData { players, deck, actions, options } = match id {
+		Some(id) => GameData::fetch(id).await,
+		None => GameData::from_file(file.unwrap())
+	};
 
 	if index >= players.len() {
 		panic!("Replay only has {} players!", players.len());

@@ -356,8 +356,8 @@ impl BotClient {
 		if let Some(game) = &mut self.game {
 			game.handle_action(&action);
 
-			for cmd in game.update_notes() {
-				send_cmd(&self.ws, "note", &cmd.to_string());
+			for (cmd, arg) in &game.queued_cmds {
+				send_cmd(&self.ws, cmd, arg);
 			}
 
 			let Game { state, .. } = &game;

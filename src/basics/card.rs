@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::clue::CardClue;
 use super::variant::Variant;
@@ -48,7 +48,7 @@ pub trait Identifiable {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Identity {
 	#[serde(rename="suitIndex")]
 	pub suit_index: usize,

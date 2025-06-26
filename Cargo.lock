@@ -1037,6 +1037,8 @@ dependencies = [
  "futures",
  "itertools",
  "log",
+ "rand",
+ "rand_chacha",
  "regex",
  "reqwest",
  "serde",

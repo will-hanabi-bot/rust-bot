@@ -25,9 +25,9 @@ pub enum Interp {
 
 #[derive(Debug, Clone, Default)]
 pub struct Note {
-	turn: usize,
-	last: String,
-	full: String,
+	pub turn: usize,
+	pub last: String,
+	pub full: String,
 }
 
 #[derive(Clone)]
@@ -43,6 +43,7 @@ pub struct Game {
 	pub convention: Arc<dyn Convention + Send + Sync>,
 	pub notes: HashMap<usize, Note>,
 	pub last_move: Option<Interp>,
+	pub queued_cmds: Vec<(String, String)>,
 }
 
 const HAND_SIZE: [usize; 7] = [0, 0, 5, 5, 4, 4, 3];
@@ -70,6 +71,7 @@ impl Game {
 			convention,
 			notes: HashMap::new(),
 			last_move: None,
+			queued_cmds: Vec::new(),
 		}
 	}
 
@@ -124,6 +126,7 @@ impl Game {
 				self.state.turn_count = num + 1;
 
 				self.update_turn(turn);
+				self.update_notes();
 			},
 			_ => (),
 		}
@@ -265,9 +268,8 @@ impl Game {
 		new_game
 	}
 
-	pub fn update_notes(&mut self) -> Vec<serde_json::Value> {
+	pub fn update_notes(&mut self) {
 		let Game { common, state, meta, notes, .. } = self;
-		let mut note_cmds = Vec::new();
 
 		for order in state.hands.concat() {
 			let frame = Frame::new(state, meta);
@@ -311,11 +313,13 @@ impl Game {
 				notes.insert(order, new_note);
 
 				if !self.catchup && self.in_progress {
-					note_cmds.push(json!({ "tableID": self.table_id, "order": order, "note": full }));
+					self.queued_cmds.push((
+						"note".to_string(),
+						json!({ "tableID": self.table_id, "order": order, "note": full }).to_string()
+					));
 				}
 			}
 		}
-		note_cmds
 	}
 }
 

@@ -192,7 +192,7 @@ impl Reactor {
 			Action::Discard(DiscardAction { player_index, order, .. }) => {
 				let mult = if state.in_endgame() { 0.2 } else { 1.0 };
 
-				mult * if common.thinks_trash(&game.frame(), *player_index).contains(order) { 1.5 } else { 0.5 }
+				mult * if common.thinks_trash(&game.frame(), *player_index).contains(order) { 1.2 } else { 0.5 }
 			},
 			Action::Play(PlayAction { order, suit_index, rank, .. }) => {
 				if *suit_index == -1 || *rank == -1 {
@@ -227,7 +227,7 @@ impl Convention for Reactor {
 
 		let ClueAction { giver, target, .. } = &action;
 
-		let interp = if prev.common.thinks_locked(&prev.frame(), *giver) {
+		let interp = if prev.common.thinks_locked(&prev.frame(), *giver) || game.state.in_endgame() {
 			Reactor::interpret_stable(&prev, game, action)
 		}
 		else {
@@ -286,7 +286,7 @@ impl Convention for Reactor {
 		}
 
 		let Game { common, state, meta, .. } = game;
-		if let Some(WaitingConnection { reacter, receiver, clue, focus_slot, .. }) = common.waiting.first() {
+		if let Some(WaitingConnection { reacter, receiver, receiver_hand, clue, focus_slot, .. }) = common.waiting.first() {
 			if player_index != reacter {
 				warn!("Had unrelated waiting connection! {:?}", common.waiting[0]);
 				return;
@@ -298,7 +298,11 @@ impl Convention for Reactor {
 				target_slot = 5;
 			}
 
-			let receive_order = state.hands[*receiver][target_slot - 1];
+			let receive_order = receiver_hand[target_slot - 1];
+			if !state.hands[*receiver].contains(&receive_order) {
+				warn!("Receiver no longer holds target {}!", receive_order);
+			}
+
 			let receive_thought = &mut common.thoughts[receive_order];
 			let receive_meta = &mut meta[receive_order];
 
@@ -333,7 +337,7 @@ impl Convention for Reactor {
 		basics::on_play(game, action);
 
 		let Game { common, state, meta, .. } = game;
-		if let Some(WaitingConnection { reacter, receiver, clue, focus_slot, .. }) = common.waiting.first() {
+		if let Some(WaitingConnection { reacter, receiver, receiver_hand, clue, focus_slot, .. }) = common.waiting.first() {
 			if player_index != reacter {
 				warn!("Had unrelated waiting connection! {:?}", common.waiting[0]);
 				return;
@@ -345,7 +349,11 @@ impl Convention for Reactor {
 				target_slot = 5;
 			}
 
-			let receive_order = state.hands[*receiver][target_slot - 1];
+			let receive_order = receiver_hand[target_slot - 1];
+			if !state.hands[*receiver].contains(&receive_order) {
+				warn!("Receiver no longer holds target {}!", receive_order);
+			}
+
 			let receive_thought = &mut common.thoughts[receive_order];
 			let receive_meta = &mut meta[receive_order];
 
@@ -394,8 +402,13 @@ impl Convention for Reactor {
 			}
 		}
 
-		let playable_orders = me.thinks_playables(&frame, state.our_player_index);
+		let mut playable_orders = me.thinks_playables(&frame, state.our_player_index);
 		let trash_orders = me.thinks_trash(&frame, state.our_player_index);
+
+		// Retain only signalled playables if there is at least 1 such
+		if playable_orders.iter().any(|&o| me.order_kp(&frame, o)) {
+			playable_orders.retain(|&o| me.order_kp(&frame, o));
+		}
 
 		info!("playables {:?}", playable_orders);
 		info!("trash {:?}", trash_orders);

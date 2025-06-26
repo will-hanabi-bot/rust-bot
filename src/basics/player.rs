@@ -32,6 +32,7 @@ pub struct WaitingConnection {
 	pub giver: usize,
 	pub reacter: usize,
 	pub receiver: usize,
+	pub receiver_hand: Vec<usize>,
 	pub clue: BaseClue,
 	pub focus_slot: usize,
 }
@@ -167,12 +168,14 @@ impl Player {
 			if let Some(depends) = depends_on {
 				if depends.iter().any(|d| frame.state.hands.concat().contains(d)) {
 					warn!("{} depends on {:?}!", order, depends);
-					return false;
 				}
 			}
-			return true;
+			else {
+				return true;
+			}
 		}
-		false
+
+		self.thoughts[order].possibilities().iter().all(|id| self.is_trash(frame, id, order))
 	}
 
 	/** Returns whether the order is globally known trash (either basic trash or already saved). */
@@ -182,6 +185,13 @@ impl Player {
 		}
 
 		self.thoughts[order].possible.iter().all(|id| self.is_trash(frame, id, order))
+	}
+
+	pub fn order_kp(&self, frame: &Frame, order: usize) -> bool {
+		if frame.meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
+			return true;
+		}
+		self.thoughts[order].possible.iter().all(|id| frame.state.is_playable(id))
 	}
 
 	pub fn thinks_locked(&self, frame: &Frame, player_index: usize) -> bool {
@@ -249,8 +259,11 @@ impl Player {
 		else if self.save2(frame.state, id) {
 			4
 		}
+		else if *rank < self.hypo_stacks[*suit_index] {
+			0
+		}
 		else {
-			5 - (rank - self.hypo_stacks[*suit_index])
+			5 - (*rank - self.hypo_stacks[*suit_index])
 		}
 	}
 
