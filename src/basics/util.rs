@@ -38,24 +38,30 @@ pub fn clue_to_perform(clue: &Clue, table_id: u32) -> PerformAction {
 pub fn perform_to_action(state: &State, action: &PerformAction, player_index: usize, deck: Option<&[Identity]>) -> Action {
 	let clue_touched = |orders: &[usize], clue: &BaseClue|
 		orders.iter().filter_map(|&order| {
-			card_touched(state.deck[order].id().unwrap_or_else(|| deck.unwrap()[order].id().unwrap()), &state.variant, clue).then_some(order)
+			match state.deck[order].id().or_else(|| deck.and_then(|d| d[order].id())) {
+				Some(id) => card_touched(id, &state.variant, clue).then_some(order),
+				None => None
+			}
 		}).collect::<Vec<_>>();
 
 	match action {
 		PerformAction::Play { target, .. } => {
-			let id = state.deck[*target].id().unwrap_or_else(|| deck.unwrap()[*target].id().unwrap());
-			let Identity { suit_index, rank } = id;
-
-			if state.is_playable(id) {
-				Action::play(player_index, *target, *suit_index as i32, *rank as i32)
-			}
-			else {
-				Action::discard(player_index, *target, *suit_index as i32, *rank as i32, true)
+			match state.deck[*target].id().or_else(|| deck.and_then(|d| d[*target].id())) {
+				Some(id) =>
+					if state.is_playable(id) {
+						Action::play(player_index, *target, id.suit_index as i32, id.rank as i32)
+					}
+					else {
+						Action::discard(player_index, *target, id.suit_index as i32, id.rank as i32, true)
+					}
+				None => Action::discard(player_index, *target, -1, -1, true)
 			}
 		},
 		PerformAction::Discard { target, .. } => {
-			let Identity { suit_index, rank } = state.deck[*target].id().unwrap_or_else(|| deck.unwrap()[*target].id().unwrap());
-			Action::discard(player_index, *target, *suit_index as i32, *rank as i32, false)
+			match state.deck[*target].id().or_else(|| deck.and_then(|d| d[*target].id())) {
+				Some(id) => Action::discard(player_index, *target, id.suit_index as i32, id.rank as i32, false),
+				None => Action::discard(player_index, *target, -1, -1, false)
+			}
 		},
 		PerformAction::Colour { target, value, .. } => {
 			let clue = BaseClue { kind: ClueKind::COLOUR, value: *value };
@@ -70,5 +76,17 @@ pub fn perform_to_action(state: &State, action: &PerformAction, player_index: us
 		PerformAction::Terminate { target, value, .. } => {
 			Action::GameOver(GameOverAction { end_condition: *value, player_index: *target })
 		},
+	}
+}
+
+/** Returns all player indices between the start (exclusive) and end (inclusive) in play order. */
+pub fn players_between(num_players: usize, start: usize, end: usize) -> Vec<usize> {
+	let gap = (end + num_players - start) % num_players;
+
+	if gap == 0 {
+		Vec::new()
+	}
+	else {
+		(1..gap).map(|inc| (start + inc) % num_players).collect()
 	}
 }

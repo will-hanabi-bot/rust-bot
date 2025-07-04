@@ -28,7 +28,7 @@ async fn spawn_ws_client(req: Request<()>, mut debug_receiver: mpsc::UnboundedRe
 				eprintln!("Error sending over WebSocket: {:?}", e);
 				break;
 			}
-			time::sleep(Duration::from_secs(1)).await;
+			time::sleep(Duration::from_millis(500)).await;
 		}
 		// If we ever exit the loop (channel closed), close the socket
 		let _ = ws_write.close().await;

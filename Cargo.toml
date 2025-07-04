@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 colored = "3.0.0"
 dotenvy = "0.15.7"
+fraction = "0.15.3"
 futures = "0.3"
 itertools = "0.14.0"
 log = "0.4.27"

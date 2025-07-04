@@ -3,10 +3,12 @@ use super::clue::{BaseClue, Clue, ClueKind};
 use super::card::{Card, Identifiable, Identity, Thought};
 use super::variant::{card_count, card_touched, colourable_suits, Variant};
 
+use itertools::Itertools;
+
 #[derive(Debug, Clone)]
 pub struct State {
 	pub turn_count: usize,
-	pub clue_tokens: u8,
+	pub clue_tokens: usize,
 	pub strikes: u8,
 	pub hands: Vec<Vec<usize>>,
 	pub deck: Vec<Card>,
@@ -22,7 +24,7 @@ pub struct State {
 	pub max_ranks: Vec<usize>,
 	pub action_list: Vec<Action>,
 	pub current_player_index: usize,
-	pub endgame_turns: Option<u8>,
+	pub endgame_turns: Option<usize>,
 }
 
 impl State {
@@ -48,6 +50,15 @@ impl State {
 			current_player_index: 0,
 			endgame_turns: None,
 		}
+	}
+
+	pub fn hash(&self) -> String {
+		let hands = self.hands.concat().iter().join(",");
+		let deck = self.deck.iter().map(|card|
+			card.id().map(|i| i.fmt(&self.variant)).unwrap_or("xx".to_owned())
+		).join(",");
+
+		format!("{},{},{},{:?}", deck, hands, self.clue_tokens, self.endgame_turns)
 	}
 
 	pub fn ended(&self) -> bool {

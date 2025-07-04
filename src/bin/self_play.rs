@@ -170,4 +170,6 @@ async fn main() {
 
 		println!("Seed {}: Score: {}, Result: {:?}", i, score, result);
 	}
+
+	std::process::exit(0);
 }

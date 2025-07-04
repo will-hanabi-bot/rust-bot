@@ -94,7 +94,7 @@ impl Player {
 
 		let mut target_index = (index as i32 + offset + hand.len() as i32) as usize % hand.len();
 
-		while frame.is_touched(hand[target_index]) {
+		while frame.is_touched(hand[target_index]) && target_index != index {
 			target_index = (target_index as i32 + offset + hand.len() as i32) as usize % hand.len();
 		}
 

@@ -1,4 +1,5 @@
-use crate::basics::{card::Identity, clue::{Clue, ClueKind}, game::Game, state::State, variant::colourable_suits};
+use crate::basics::card::{Identifiable, Identity};
+use crate::basics::{clue::{Clue, ClueKind}, game::Game, state::State, variant::colourable_suits};
 
 use super::clue::BaseClue;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
@@ -129,21 +130,21 @@ impl Action {
 				};
 				format!("{} clues {} to {}", state.player_names[*giver], value, state.player_names[*target])
 			}
-			Action::Play(PlayAction { player_index, suit_index, rank, .. }) => {
+			Action::Play(PlayAction { player_index, suit_index, rank, order }) => {
 				let id = if *suit_index == -1 || *rank == -1 {
 					"xx".to_string()
 				} else {
 					(Identity { suit_index: *suit_index as usize, rank: *rank as usize }).fmt(&state.variant)
 				};
-				format!("{} plays {}", state.player_names[*player_index], id)
+				format!("{} plays {} ({})", state.player_names[*player_index], id, order)
 			}
-			Action::Discard(DiscardAction { player_index, suit_index, rank, failed, .. }) => {
+			Action::Discard(DiscardAction { player_index, suit_index, rank, failed, order }) => {
 				let id = if *suit_index == -1 || *rank == -1 {
 					"xx".to_string()
 				} else {
 					(Identity { suit_index: *suit_index as usize, rank: *rank as usize }).fmt(&state.variant)
 				};
-				format!("{} {} {}", state.player_names[*player_index], if *failed { "bombs" } else { "discards" }, id)
+				format!("{} {} {} ({})", state.player_names[*player_index], if *failed { "bombs" } else { "discards" }, id, order)
 			}
 			Action::Draw(DrawAction { player_index, suit_index, rank, .. }) => {
 				let id = if *suit_index == -1 || *rank == -1 {
@@ -167,7 +168,7 @@ impl Action {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PerformAction {
 	Play { table_id: Option<u32>, target: usize },
 	Discard { table_id: Option<u32>, target: usize },
@@ -205,6 +206,10 @@ impl<'de> Deserialize<'de> for PerformAction {
 }
 
 impl PerformAction {
+	pub fn is_clue(&self) -> bool {
+		matches!(self, PerformAction::Colour { .. } | PerformAction::Rank { .. })
+	}
+
 	pub fn fmt(&self, game: &Game) -> String {
 		let Game { common, state, .. } = game;
 
@@ -228,6 +233,28 @@ impl PerformAction {
 				format!("Game ended: {} {}", target, value)
 			}
 		}
+	}
+
+	pub fn fmt_s(&self, state: &State, player_index: usize) -> String {
+		let action_type = match self {
+			PerformAction::Play { target, .. } => {
+				format!("play {}, order {}", state.deck[*target].id().map(|i| i.fmt(&state.variant)).unwrap_or("xx".to_owned()), target)
+			}
+			PerformAction::Discard { target, .. } => {
+				format!("discard {}, order {}", state.deck[*target].id().map(|i| i.fmt(&state.variant)).unwrap_or("xx".to_owned()), target)
+			}
+			PerformAction::Colour { target, value, .. } => {
+				(Clue { kind: ClueKind::COLOUR, value: *value, target: *target }).fmt(state)
+			}
+			PerformAction::Rank { target, value, .. } => {
+				(Clue { kind: ClueKind::RANK, value: *value, target: *target }).fmt(state)
+			}
+			PerformAction::Terminate { target, value, .. } => {
+				format!("Game ended: {} {}", target, value)
+			}
+		};
+
+		format!("{} ({})", action_type, state.player_names[player_index])
 	}
 }
 

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::util::{take_turn, TestOptions, Player};
 
-mod util;
-mod ex_asserts;
+pub mod util;
+pub mod ex_asserts;
 
 #[test]
 fn it_doesnt_elim_when_giver_holds_dupes() {

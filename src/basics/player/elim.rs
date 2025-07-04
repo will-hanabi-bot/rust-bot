@@ -341,7 +341,7 @@ impl Player {
 
 				let thought = &self.thoughts[order];
 
-				if meta[order].trash || thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
+				if meta[order].trash || thought.reset ||  thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
 					continue;
 				}
 

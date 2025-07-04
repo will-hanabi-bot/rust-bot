@@ -11,6 +11,26 @@ use crate::reactor::{ClueInterp, Reactor};
 use crate::basics::action::{ClueAction};
 
 impl Reactor {
+	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
+		info!("interpreting clue when both players are loaded!");
+		let ClueAction { giver, target, .. } = &action;
+		let Game { state, .. } = game;
+
+		if state.next_player_index(*giver) != *target {
+			info!("target is not the next player!");
+			return ClueInterp::None;
+		}
+
+		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
+		let prev_playables = prev.players[*target].thinks_playables(&prev.frame(), *target);
+		if clued_resets.iter().chain(duplicate_reveals.iter()).any(|o| prev_playables.contains(o)) {
+			info!("fix clue!");
+			return ClueInterp::Reveal;
+		}
+		info!("not an urgent fix clue, not interpreting");
+		ClueInterp::None
+	}
+
 	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
 		info!("interpreting stable clue!");
 		let ClueAction { target, list, clue, .. } = &action;
@@ -26,10 +46,10 @@ impl Reactor {
 		}
 
 		let Game { common: prev_common, .. } = prev;
-		let Game { common, .. } = &game;
+		let Game { state, common, .. } = &game;
 		let frame = game.frame();
 
-		if !prev_common.thinks_playables(&prev.frame(), *target).is_empty() {
+		if !state.in_endgame() && !prev_common.thinks_playables(&prev.frame(), *target).is_empty() {
 			warn!("target was already loaded with a playable!");
 			return ClueInterp::None;
 		}
@@ -215,7 +235,8 @@ impl Reactor {
 		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
 		inferred.retain(|i| game.state.is_playable(i) && !game.players[*giver].is_trash(&game.frame(), i, target));
 		let reset = inferred.is_empty();
-		game.common.thoughts[target].inferred = inferred;
+		game.common.thoughts[target].inferred = inferred.clone();
+		game.common.thoughts[target].info_lock = Some(inferred);
 
 		if reset {
 			game.common.thoughts[target].reset_inferences();

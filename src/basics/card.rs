@@ -123,6 +123,7 @@ pub struct Thought {
 	pub base: Option<Identity>,
 	pub possible: HashSet<Identity>,
 	pub inferred: HashSet<Identity>,
+	pub info_lock: Option<HashSet<Identity>>,
 	pub reset: bool,
 }
 
@@ -166,6 +167,7 @@ impl Thought {
 			base,
 			possible: poss.clone(),
 			inferred: poss.clone(),
+			info_lock: None,
 			reset: false,
 		}
 	}
@@ -177,6 +179,9 @@ impl Thought {
 	pub fn reset_inferences(&mut self) {
 		self.reset = true;
 		self.inferred = self.possible.clone();
+		if let Some(info_lock) = &self.info_lock {
+			self.inferred.retain(|i| info_lock.contains(i));
+		}
 	}
 }
 

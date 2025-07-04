@@ -8,7 +8,7 @@ use std::{collections::{HashMap, VecDeque}, time::Duration};
 use crate::reactor::Reactor;
 use crate::websocket::{send_chat, send_cmd, send_pm};
 use crate::basics::{action::Action, card::Identifiable, game::Game, state::State, variant::VariantManager};
-use crate::console::DebugCommand;
+use crate::console::{DebugCommand, NavArg};
 
 #[derive(Deserialize)]
 struct ChatMessage {
@@ -79,7 +79,6 @@ struct InitMessage {
 
 struct Settings {
 	convention: String,
-	level: usize
 }
 
 #[derive(Clone, Deserialize)]
@@ -118,8 +117,7 @@ impl BotClient {
 	pub fn new(ws: mpsc::UnboundedSender<String>, variant_manager: VariantManager) -> Self {
 		Self {
 			settings: Settings {
-				convention: CONVENTIONS[0].to_owned(),
-				level: 1,
+				convention: CONVENTIONS[0].to_owned()
 			},
 			info: None,
 			table_id: None,
@@ -134,10 +132,22 @@ impl BotClient {
 
 	pub fn handle_debug_command(&mut self, command: DebugCommand) {
 		match command {
-			DebugCommand::Hand(player_name) => {
+			DebugCommand::Hand(player_name, from) => {
 				if let Some(game) = &self.game {
 					let state = &game.state;
 					if let Some(hand) = state.player_names.iter().position(|name| *name == player_name).map(|i| &state.hands[i]) {
+						let player = match &from {
+							None => &game.common,
+							Some(from_name) => match state.player_names.iter().position(|name| name == from_name) {
+								None => {
+									println!("Player {} not found.", from_name);
+									return;
+								}
+								Some(index) => &game.players[index]
+							}
+						};
+
+						println!("viewing from {}", from.unwrap_or_else(|| "common".to_owned()));
 						println!("====================");
 
 						for &order in hand {
@@ -154,26 +164,38 @@ impl BotClient {
 							}
 
 							println!("{}: {} {:?}", order, state.deck[order].id().map(|&i| i.fmt(&state.variant)).unwrap_or("xx".to_string()), meta.status);
-							println!("inferred: [{}]", game.common.str_infs(state, order));
-							println!("possible: [{}]", game.common.str_poss(state, order));
+							println!("inferred: [{}]", player.str_infs(state, order));
+							println!("possible: [{}]", player.str_poss(state, order));
 							if !flags.is_empty() {
 								println!("flags: {:?}", flags);
 							}
 							println!("====================");
 						}
 					}
+					else {
+						println!("Player {} not found.", player_name);
+					}
 				} else {
 					println!("No active game.");
 				}
 			}
-			DebugCommand::Navigate(turn) => {
+			DebugCommand::Navigate(nav_arg) => {
 				if let Some(game) = &mut self.game {
 					if game.in_progress {
 						warn!("Cannot navigate while game is in progress.");
 					}
 					else {
-						let max_turn = game.state.action_list.iter().filter_map(|action|
+						let Game { state, .. } = game;
+						let max_turn = state.action_list.iter().filter_map(|action|
 							if let Action::Turn(turn) = action { Some(turn.num + 2) } else { None }).max().unwrap_or(0);
+
+						let turn = match nav_arg {
+							NavArg::Turn(turn) => turn,
+							NavArg::NextRound => state.turn_count + state.num_players,
+							NavArg::Next => state.turn_count + 1,
+							NavArg::Prev => state.turn_count.saturating_sub(1),
+							NavArg::PrevRound => state.turn_count.saturating_sub(state.num_players)
+						};
 
 						if turn < 1 || turn > max_turn {
 							error!("Turn {turn} does not exist.");
@@ -347,7 +369,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.0.1 (rust-bot)");
+			send_pm(&self.ws, who, "v0.1.0 (rust-bot)");
 		}
 	}
 
@@ -359,6 +381,8 @@ impl BotClient {
 			for (cmd, arg) in &game.queued_cmds {
 				send_cmd(&self.ws, cmd, arg);
 			}
+
+			game.queued_cmds.clear();
 
 			let Game { state, .. } = &game;
 			let perform = !game.catchup && state.current_player_index == state.our_player_index &&

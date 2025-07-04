@@ -10,13 +10,11 @@ use rust_bot::basics::state::State;
 use rust_bot::basics::variant::{all_ids, card_count, id_touched, Variant};
 use std::sync::{Arc, LazyLock};
 
-#[allow(dead_code)]
 pub enum Colour {
 	Red,Yellow,Green,Blue,Purple
 }
 
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Player {
 	Alice,Bob,Cathy,Donald,Emily
 }
@@ -38,7 +36,7 @@ pub struct TestOptions<'a> {
 	pub play_stacks: Option<Vec<usize>>,
 	pub discarded: Vec<&'a str>,
 	pub strikes: u8,
-	pub clue_tokens: u8,
+	pub clue_tokens: usize,
 	pub starting: Player,
 	pub variant: &'a str,
 	pub init: Box<dyn Fn(&mut Game)>,
@@ -370,4 +368,26 @@ pub fn pre_clue(game: &mut Game, player_index: Player, slot: usize, clues: &[Tes
 	state.deck[order].clues = clues.iter().map(|&TestClue { kind, value, giver }|
 		CardClue { kind, value, giver: giver as usize, turn: 0 }
 	).collect();
+}
+
+/**
+ * Pre-clues the slot with both colour and rank (only works for simple variants).
+ */
+pub fn fully_known(game: &mut Game, player_index: Player, slot: usize, short: &str) {
+	let Game { state, .. } = game;
+	let card = &state.deck[state.hands[player_index as usize][slot - 1]];
+	let id = state.expand_short(short);
+
+	if let Some(deck_id) = card.id() {
+		if deck_id != &id {
+			panic!("{}'s card at slot {} is not {}! found {}", state.player_names[player_index as usize], slot, id.fmt(&state.variant), deck_id.fmt(&state.variant));
+		}
+	}
+
+	let giver = if player_index == Player::Alice { Player::Bob } else { Player::Alice };
+
+	pre_clue(game, player_index, slot, &[
+		TestClue { kind: ClueKind::RANK, value: id.rank, giver },
+		TestClue { kind: ClueKind::COLOUR, value: id.suit_index, giver },
+	]);
 }

@@ -78,6 +78,12 @@ impl Clue {
 			ClueKind::RANK => &self.value.to_string(),
 		};
 		format!("({} to {})", value, state.player_names[self.target])
+	}
 
+	pub fn to_base(&self) -> BaseClue {
+		BaseClue {
+			kind: self.kind,
+			value: self.value,
+		}
 	}
 }

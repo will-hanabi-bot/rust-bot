@@ -75,6 +75,18 @@ impl Game {
 		}
 	}
 
+	pub fn hash(&self) -> String {
+		let state = self.state.hash();
+		let hash_player = |player: &Player| {
+			(0..player.thoughts.len()).map(|i| player.str_infs(&self.state, i)).join(",")
+		};
+		let player_thoughts = self.players.iter().map(hash_player).join(",");
+		let common_thoughts = hash_player(&self.common);
+		let action_list = self.state.action_list.iter().map(|action| format!("{:?}", action)).join(",");
+
+		format!("{},{},{},{}", state, player_thoughts, common_thoughts, action_list)
+	}
+
 	pub fn frame(&self) -> Frame {
 		Frame::new(&self.state, &self.meta)
 	}
@@ -239,14 +251,14 @@ impl Game {
 			}
 		}
 		else {
+			let level = log::max_level();
 			log::set_max_level(LevelFilter::Off);
 
 			while new_game.state.turn_count < turn - 1 {
-				info!("turn {}", turn);
 				new_game.handle_action(&actions[new_game.state.action_list.len()]);
 			}
 
-			log::set_max_level(LevelFilter::Info);
+			log::set_max_level(level);
 
 			while let Some(action) = actions.get(new_game.state.action_list.len()) {
 				if new_game.state.turn_count < turn {
@@ -329,4 +341,7 @@ pub trait Convention {
 	fn interpret_play(&self, game: &mut Game, action: &PlayAction);
 	fn take_action(&self, game: &Game) -> PerformAction;
 	fn update_turn(&self, game: &mut Game, action: &TurnAction);
+
+	fn find_all_clues(&self, game: &Game, player_index: usize) -> Vec<PerformAction>;
+	fn find_all_discards(&self, game: &Game, player_index: usize) -> Vec<PerformAction>;
 }

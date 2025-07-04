@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::util::{pre_clue, take_turn, TestClue, TestOptions, Colour, Player};
 
-mod util;
-mod ex_asserts;
+pub mod util;
+pub mod ex_asserts;
 
 #[test]
 fn it_understands_a_ref_play() {

@@ -13,6 +13,7 @@ pub mod action;
 pub mod card;
 pub mod clue;
 pub mod clue_result;
+pub mod endgame;
 pub mod game;
 pub mod player;
 pub mod state;
@@ -54,9 +55,7 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 		}
 	}
 
-	if state.endgame_turns.is_some() {
-		state.endgame_turns = state.endgame_turns.map(|turns| turns - 1);
-	}
+	state.endgame_turns = state.endgame_turns.map(|turns| turns - 1);
 
 	state.clue_tokens -= 1;
 }
@@ -88,9 +87,7 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 
 	let Game { state, .. } = game;
 
-	if let Some(endgame_turns) = state.endgame_turns {
-		state.endgame_turns = Some(endgame_turns - 1);
-	}
+	state.endgame_turns = state.endgame_turns.map(|turns| turns - 1);
 
 	if failed {
 		state.strikes += 1;
@@ -113,7 +110,7 @@ pub fn on_draw(game: &mut Game, action: &DrawAction) {
 	state.cards_left -= 1;
 
 	if state.cards_left == 0 {
-		state.endgame_turns = Some(state.num_players as u8);
+		state.endgame_turns = Some(state.num_players);
 	}
 
 	for (i, player) in players.iter_mut().enumerate() {
@@ -156,9 +153,7 @@ pub fn on_play(game: &mut Game, action: &PlayAction) {
 
 	let Game { state, .. } = game;
 
-	if let Some(endgame_turns) = state.endgame_turns {
-		state.endgame_turns = Some(endgame_turns - 1);
-	}
+	state.endgame_turns = state.endgame_turns.map(|turns| turns - 1);
 
 	if rank == 5 && state.clue_tokens < 8 {
 		state.clue_tokens += 1;
@@ -179,10 +174,12 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 
 	for player in players {
 		for (i, thought) in player.thoughts.iter_mut().enumerate() {
-			let Thought { possible, inferred, .. } = &common.thoughts[i];
+			let Thought { possible, inferred, info_lock, reset, .. } = &common.thoughts[i];
 
-			thought.possible.retain(|id| possible.contains(id));
-			thought.inferred.retain(|id| inferred.contains(id));
+			thought.possible = possible.clone();
+			thought.inferred = inferred.clone();
+			thought.info_lock = info_lock.clone();
+			thought.reset = *reset;
 		}
 
 		if good_touch {

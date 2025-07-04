@@ -19,9 +19,10 @@ This was mainly an experiment to see if Rust was a good language for me (it isn'
 - Navigate to the cloned repository in a terminal.
 - Fill out the login details for the bot in an .env file. See .env.template for an example.
   - You'll need to create its account on hanab.live first.
-- Run `cargo run --bin main -- index=<index>` to start the bot.
+- Run `cargo run --release --bin main -- index=<index>` to start the bot.
 - Debug logs will show up in the console, providing more information about what the bot thinks about every action.
-  - `hand <playerName>` will display the information on that player's hand from the common knowledge perspective.
+- `hand <playerName> [observerIndex]` will display the information on that player's hand from a particular perspective.
+        - If no observer index is provided, the hand will be logged from the common knowledge perspective.
 
 ## Supported commands
 
@@ -36,10 +37,18 @@ Some commands can be sent inside a room to affect all bots that have joined.
 
 ## Watching replays
 
-A replay from hanab.live or from a file (in JSON) can be simulated using `cargo run --bin replay -- <options>`.
+A replay from hanab.live or from a file (in JSON) can be simulated using `cargo run --release --bin replay -- <options>`.
 - `id=<id>` indicates the ID of the hanab.live replay to load
+- `file=<filePath>` indicates the path to the JSON replay to load (relative from the root directory)
 - `index=<index>` sets the index of the player the bot will simulate as (defaults to 0)
 
 In a replay, the following commands are also supported (in addition to `hand`):
 - `navigate <turn>` to travel to a specific turn.
     - If it is the bot's turn, it will provide a suggestion on what it would do.
+    - Instead of a turn number, `+` (next turn), `++` (next turn of the same player), `-`, and `--` can also be used.
+
+## Self-play
+The bot can play games with copies of itself using `cargo run --release self_play [-- <options>]`. Possible options:
+- `games=<numGames>` sets the number of games to play (defaults to 1)
+- `seed=<seed>` sets the seed of the first game to be played (defaults to 0)
+    - The seeding algorithm is different from the one used on hanab.live.
