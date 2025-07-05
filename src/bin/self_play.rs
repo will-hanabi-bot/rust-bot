@@ -166,7 +166,10 @@ async fn main() {
 			"notes": notes,
 			"options": { "variant": variant.name }
 		}).to_string();
-		fs::write(format!("seeds/{i}.json"), data).expect("Should be able to write to `/foo/tmp`");
+		if let Err(e) = fs::create_dir_all("seeds") {
+			log::error!("Could not create seeds/ directory: {e:?}");
+		}
+		fs::write(format!("seeds/{i}.json"), data).expect(&format!("Should be able to write to `seeds/{i}.json`"));
 
 		println!("Seed {}: Score: {}, Result: {:?}", i, score, result);
 	}
