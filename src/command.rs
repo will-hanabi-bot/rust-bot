@@ -345,6 +345,8 @@ impl BotClient {
 							None =>
 								send_pm(&self.ws, who, "Room is password protected, please provide a password.")
 						}
+					} else {
+						send_cmd(&self.ws, "tableJoin", &json!({ "tableID": table.id }).to_string())
 					}
 				}
 				None => send_pm(&self.ws, who, "Could not join, as you are not in a room.")
