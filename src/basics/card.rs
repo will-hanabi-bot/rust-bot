@@ -3,7 +3,6 @@ use std::fmt::{self, Display, Formatter};
 use serde::{Deserialize, Serialize};
 
 use super::clue::CardClue;
-use super::variant::Variant;
 
 #[derive(Debug, Clone, Default)]
 pub struct IdOptions {
@@ -53,12 +52,6 @@ pub struct Identity {
 	#[serde(rename="suitIndex")]
 	pub suit_index: usize,
 	pub rank: usize
-}
-
-impl Identity {
-	pub fn fmt(&self, variant: &Variant) -> String{
-		format!("{}{}", variant.short_forms[self.suit_index], self.rank)
-	}
 }
 
 impl Identifiable for Identity {

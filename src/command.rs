@@ -7,7 +7,7 @@ use std::{collections::{HashMap, VecDeque}, time::Duration};
 
 use crate::reactor::Reactor;
 use crate::websocket::{send_chat, send_cmd, send_pm};
-use crate::basics::{action::Action, card::Identifiable, game::Game, state::State, variant::VariantManager};
+use crate::basics::{action::Action, game::Game, state::State, variant::VariantManager};
 use crate::console::{DebugCommand, NavArg};
 
 #[derive(Deserialize)]
@@ -163,7 +163,7 @@ impl BotClient {
 								flags.push("urgent");
 							}
 
-							println!("{}: {} {:?}", order, state.deck[order].id().map(|&i| i.fmt(&state.variant)).unwrap_or("xx".to_string()), meta.status);
+							println!("{}: {} {:?}", order, state.log_iden(&state.deck[order]), meta.status);
 							println!("inferred: [{}]", player.str_infs(state, order));
 							println!("possible: [{}]", player.str_poss(state, order));
 							if !flags.is_empty() {
@@ -371,7 +371,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.1.0 (rust-bot)");
+			send_pm(&self.ws, who, "v0.2.0 (rust-bot)");
 		}
 	}
 
@@ -405,9 +405,6 @@ impl BotClient {
 						sleep(Duration::from_secs(2)).await;
 						send_cmd(&ws, "action", &json!(suggested_action).to_string());
 					});
-				}
-				else {
-					info!("Suggested action: {}", suggested_action.fmt(game));
 				}
 			}
 		}

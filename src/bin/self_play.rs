@@ -169,7 +169,7 @@ async fn main() {
 		if let Err(e) = fs::create_dir_all("seeds") {
 			log::error!("Could not create seeds/ directory: {e:?}");
 		}
-		fs::write(format!("seeds/{i}.json"), data).expect(&format!("Should be able to write to `seeds/{i}.json`"));
+		fs::write(format!("seeds/{i}.json"), data).unwrap_or_else(|_| panic!("Should be able to write to `seeds/{i}.json`"));
 
 		println!("Seed {}: Score: {}, Result: {:?}", i, score, result);
 	}

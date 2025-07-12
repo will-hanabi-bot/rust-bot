@@ -300,7 +300,7 @@ impl Player {
 					}
 
 					if frame.is_blind_playing(order) && maybe_bad_touch {
-						warn!("tried to gt elim {} from finessed card (order {})! could be bad touched", id.fmt(&state.variant), order);
+						warn!("tried to gt elim {} from finessed card (order {})! could be bad touched", state.log_id(&id), order);
 					}
 
 					thought.inferred.retain(|i| i != &id);
@@ -337,7 +337,7 @@ impl Player {
 
 		for i in 0..state.num_players {
 			for &order in &state.hands[i] {
-				self.add_to_maps(frame, order, i);
+				// self.add_to_maps(frame, order, i);
 
 				let thought = &self.thoughts[order];
 
@@ -370,13 +370,13 @@ impl Player {
 			}
 		}
 
-		self.basic_gt_elim(frame, &all_ids, &elim_candidates);
-		self.card_elim(state);
+		// self.basic_gt_elim(frame, &all_ids, &elim_candidates);
+		// self.card_elim(state);
 	}
 
 	fn elim_link(&mut self, frame: &Frame, matches: &Vec<&usize>, focused_order: &usize, id: Identity, good_touch: bool) {
 		let Frame { state, .. } = frame;
-		info!("eliminating link with inference {} from focus! original {:?}, final {}", id.fmt(&state.variant), matches, focused_order);
+		info!("eliminating link with inference {} from focus! original {:?}, final {}", state.log_id(&id), matches, focused_order);
 
 		for &order in matches {
 			let thought = &mut self.thoughts[*order];
@@ -434,7 +434,7 @@ impl Player {
 
 			// We have enough inferred cards to elim elsewhere
 			if matches.len() > inferred.len() {
-				info!("adding link {:?} inferences {} ({})", matches, inferred.iter().map(|i| i.fmt(&state.variant)).join(","), if self.is_common { "common" } else { &state.player_names[self.player_index] });
+				info!("adding link {:?} inferences {} ({})", matches, inferred.iter().map(|i| state.log_id(i)).join(","), if self.is_common { "common" } else { &state.player_names[self.player_index] });
 				for o in &matches {
 					linked_orders.insert(**o);
 				}
@@ -462,7 +462,7 @@ impl Player {
 					let viable_orders = orders.iter().filter(|&o| self.thoughts[*o].possible.contains(&id)).collect::<Vec<_>>();
 
 					if viable_orders.is_empty() {
-						info!("promised id {} not found among cards {:?}, rewind?", id.fmt(&state.variant), orders)
+						info!("promised id {} not found among cards {:?}, rewind?", state.log_id(&id), orders)
 					}
 					else if viable_orders.len() == 1 {
 						self.thoughts[*viable_orders[0]].inferred = HashSet::from([id]);
@@ -488,7 +488,7 @@ impl Player {
 					}
 
 					if let Some(lost_inference) = ids.iter().find(|&i| orders.iter().any(|&o| !self.thoughts[o].inferred.contains(i))) {
-						info!("linked orders {:?} lost inference {}", orders, lost_inference.fmt(&state.variant));
+						info!("linked orders {:?} lost inference {}", orders, state.log_id(lost_inference));
 						continue;
 					}
 					new_links.push(link);

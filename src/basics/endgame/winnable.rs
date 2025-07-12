@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use fraction::ConstOne;
 use itertools::Itertools;
 
@@ -151,7 +153,7 @@ impl EndgameSolver {
 		}
 	}
 
-	pub(super) fn winnable_simpler(&mut self, state: &State, player_turn: usize, remaining: &RemainingMap, depth: usize) -> bool {
+	pub(super) fn winnable_simpler(&mut self, state: &State, player_turn: usize, remaining: &RemainingMap, depth: usize, deadline: &Instant) -> bool {
 		if state.score() == state.max_score() {
 			return true;
 		}
@@ -201,7 +203,7 @@ impl EndgameSolver {
 
 		// info!("possible winnable simpler actions for {}: {:?}", state.player_names[player_turn], possible_actions);
 
-		let winnable = possible_actions.iter().any(|action| match self.winnable_if(state, player_turn, action, remaining, depth) {
+		let winnable = possible_actions.iter().any(|action| match self.winnable_if(state, player_turn, action, remaining, depth, deadline) {
 			SimpleResult::AlwaysWinnable => true,
 			SimpleResult::WinnableWithDraws(_) => true,
 			SimpleResult::Unwinnable => false
@@ -210,7 +212,7 @@ impl EndgameSolver {
 		winnable
 	}
 
-	pub(super) fn winnable_if(&mut self, state: &State, player_turn: usize, action: &PerformAction, remaining: &RemainingMap, depth: usize) -> SimpleResult {
+	pub(super) fn winnable_if(&mut self, state: &State, player_turn: usize, action: &PerformAction, remaining: &RemainingMap, depth: usize, deadline: &Instant) -> SimpleResult {
 		let hash = format!("{},{},{:?},{:?}", state.hash(), player_turn, action, remaining.iter().sorted_by_key(|(k, _)| match k {
 			None => 100,
 			Some(id) => id.suit_index * 10 + id.rank
@@ -219,10 +221,14 @@ impl EndgameSolver {
 			return self.if_cache[&hash].clone();
 		}
 
+		if Instant::now() > *deadline {
+			return SimpleResult::Unwinnable;
+		}
+
 		// println!("{}", format!("checking if {} is winning {} {}", action.fmt_s(state, player_turn), state.turn_count, self.simpler_cache.len()).green());
 		if state.cards_left == 0 || action.is_clue() {
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, None);
-			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), remaining, depth + 1);
+			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), remaining, depth + 1, deadline);
 
 			let res = if winnable { SimpleResult::AlwaysWinnable } else { SimpleResult:: Unwinnable };
 			self.if_cache.insert(hash, res.clone());
@@ -236,7 +242,7 @@ impl EndgameSolver {
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, Some(draw));
 			let new_remaining = remove_remaining(remaining, id);
 
-			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), &new_remaining, depth + 1);
+			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), &new_remaining, depth + 1, deadline);
 			if winnable {
 				winnable_draws.push(*id);
 			}

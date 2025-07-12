@@ -1,4 +1,4 @@
-use crate::basics::card::{Identifiable, Identity};
+use crate::basics::card::{Identity};
 use crate::basics::{clue::{Clue, ClueKind}, game::Game, state::State, variant::colourable_suits};
 
 use super::clue::BaseClue;
@@ -122,6 +122,13 @@ impl Action {
 	}
 
 	pub fn fmt(&self, state: &State) -> String {
+		let log_id = |suit_index: &i32, rank: &i32|
+			if *suit_index == -1 || *rank == -1 {
+				"xx".to_string()
+			} else {
+				state.log_id(&Identity { suit_index: *suit_index as usize, rank: *rank as usize })
+			};
+
 		match self {
 			Action::Clue(ClueAction { giver, target, clue, .. }) => {
 				let value = match clue.kind {
@@ -131,28 +138,13 @@ impl Action {
 				format!("{} clues {} to {}", state.player_names[*giver], value, state.player_names[*target])
 			}
 			Action::Play(PlayAction { player_index, suit_index, rank, order }) => {
-				let id = if *suit_index == -1 || *rank == -1 {
-					"xx".to_string()
-				} else {
-					(Identity { suit_index: *suit_index as usize, rank: *rank as usize }).fmt(&state.variant)
-				};
-				format!("{} plays {} ({})", state.player_names[*player_index], id, order)
+				format!("{} plays {} ({})", state.player_names[*player_index], log_id(suit_index, rank), order)
 			}
 			Action::Discard(DiscardAction { player_index, suit_index, rank, failed, order }) => {
-				let id = if *suit_index == -1 || *rank == -1 {
-					"xx".to_string()
-				} else {
-					(Identity { suit_index: *suit_index as usize, rank: *rank as usize }).fmt(&state.variant)
-				};
-				format!("{} {} {} ({})", state.player_names[*player_index], if *failed { "bombs" } else { "discards" }, id, order)
+				format!("{} {} {} ({})", state.player_names[*player_index], if *failed { "bombs" } else { "discards" }, log_id(suit_index, rank), order)
 			}
 			Action::Draw(DrawAction { player_index, suit_index, rank, .. }) => {
-				let id = if *suit_index == -1 || *rank == -1 {
-					"xx".to_string()
-				} else {
-					(Identity { suit_index: *suit_index as usize, rank: *rank as usize }).fmt(&state.variant)
-				};
-				format!("{} draws {}", state.player_names[*player_index], id)
+				format!("{} draws {}", state.player_names[*player_index], log_id(suit_index, rank))
 			}
 			Action::Turn(TurnAction { num, current_player_index }) => {
 				format!("Turn {} ({})", num, state.player_names[*current_player_index as usize])
@@ -238,10 +230,10 @@ impl PerformAction {
 	pub fn fmt_s(&self, state: &State, player_index: usize) -> String {
 		let action_type = match self {
 			PerformAction::Play { target, .. } => {
-				format!("play {}, order {}", state.deck[*target].id().map(|i| i.fmt(&state.variant)).unwrap_or("xx".to_owned()), target)
+				format!("play {}, order {}", state.log_iden(&state.deck[*target]), target)
 			}
 			PerformAction::Discard { target, .. } => {
-				format!("discard {}, order {}", state.deck[*target].id().map(|i| i.fmt(&state.variant)).unwrap_or("xx".to_owned()), target)
+				format!("discard {}, order {}", state.log_iden(&state.deck[*target]), target)
 			}
 			PerformAction::Colour { target, value, .. } => {
 				(Clue { kind: ClueKind::COLOUR, value: *value, target: *target }).fmt(state)

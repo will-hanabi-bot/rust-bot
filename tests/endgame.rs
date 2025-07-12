@@ -147,7 +147,7 @@ fn it_plays_to_start_simple_endgame() {
 		Err(msg) => panic!("Game should be winnable! {}", msg),
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
-			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0], table_id: None });
+			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0], table_id: Some(0) });
 		}
 	}
 }
@@ -179,7 +179,7 @@ fn it_plays_to_start_endgame_when_other_has_dupes() {
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
 			// Alice should play p3.
-			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0], table_id: None });
+			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0], table_id: Some(0) });
 		}
 	}
 }
@@ -217,7 +217,7 @@ fn it_plays_to_start_a_complex_endgame_where_all_cards_are_seen() {
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
 			// Alice should play r4.
-			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][4], table_id: None });
+			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][4], table_id: Some(0) });
 		}
 	}
 }
@@ -249,7 +249,7 @@ fn it_calculates_basic_winrate_correctly() {
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::new(1_u64, 6_u64));
 			// Alice should play r3.
-			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][4], table_id: None });
+			assert_eq!(perform, PerformAction::Play { target: game.state.hands[Player::Alice as usize][4], table_id: Some(0) });
 		}
 	}
 }

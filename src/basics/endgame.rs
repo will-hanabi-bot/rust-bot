@@ -1,6 +1,7 @@
 use colored::Colorize;
 use fraction::{ConstZero, ConstOne};
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use itertools::Itertools;
 use log::info;
 
@@ -51,10 +52,11 @@ impl EndgameSolver {
 	}
 
 	pub fn solve_game(&mut self, game: &Game, player_turn: usize) -> Result<(PerformAction, Frac), String> {
+		let deadline = Instant::now() + Duration::from_secs(5);
 		let mut remaining_ids = find_remaining_ids(game);
 
 		if remaining_ids.values().filter(|v| v.all).count() > 2 {
-			return Err(format!("couldn't find any {}!", remaining_ids.keys().map(|i| i.unwrap().fmt(&game.state.variant)).join(",")));
+			return Err(format!("couldn't find any {}!", remaining_ids.keys().map(|i| game.state.log_id(&i.unwrap())).join(",")));
 		}
 
 		let level = log::max_level();
@@ -79,7 +81,7 @@ impl EndgameSolver {
 			let mut hypo_game = game.clone();
 			hypo_game.state = state;
 
-			match self.winnable(&hypo_game, player_turn, &remaining_ids, 0) {
+			match self.winnable(&hypo_game, player_turn, &remaining_ids, 0, &deadline) {
 				Err(_) => {
 					log::set_max_level(level);
 					return Err("couldn't find a winning strategy.".to_owned());
@@ -137,6 +139,10 @@ impl EndgameSolver {
 		let mut arrangements = vec![Arrangement { ids: vec![], prob: Frac::ONE, remaining: remaining_ids.clone() }];
 
 		for _ in 0..unknown_own.len() {
+			if Instant::now() > deadline {
+				log::set_max_level(level);
+				return Err("timed out".to_string());
+			}
 			arrangements = arrangements.iter().flat_map(expand_arr).collect();
 		}
 
@@ -164,8 +170,13 @@ impl EndgameSolver {
 		let mut best_performs: HashMap<PerformAction, (Frac, usize)> = HashMap::new();
 
 		for GameArr { game, prob, remaining, .. } in arranged_games {
-			info!("\n{}", format!("arrangement {} {}", game.state.our_hand().iter().map(|&o| game.state.deck[o].id().map(|i| i.fmt(&game.state.variant)).unwrap_or("xx".to_owned())).join(","), prob).purple());
-			let all_actions = self.possible_actions(&game, player_turn, &remaining);
+			if Instant::now() > deadline {
+				log::set_max_level(level);
+				return Err("timed out".to_string());
+			}
+
+			info!("\n{}", format!("arrangement {} {}", game.state.our_hand().iter().map(|&o| game.state.log_iden(&game.state.deck[o])).join(","), prob).purple());
+			let all_actions = self.possible_actions(&game, player_turn, &remaining, &deadline);
 
 			if all_actions.is_empty() {
 				info!("couldn't find any valid actions");
@@ -175,7 +186,7 @@ impl EndgameSolver {
 			info!("{}", format!("possible actions: {:?}", all_actions.iter().map(|(action,_)| action.fmt(&game)).join(", ")).green());
 
 			let hypo_games = EndgameSolver::gen_hypo_games(&game, &remaining, all_actions.iter().all(|(p,_)| p.is_clue()));
-			let best_result = self.optimize(hypo_games, all_actions, player_turn, 0);
+			let best_result = self.optimize(hypo_games, all_actions, player_turn, 0, &deadline);
 
 			if let Ok((performs, winrate)) = best_result {
 				info!("arrangement winnable! {} (winrate {})", performs.iter().map(|perform| perform.fmt(&game)).join(","), winrate);
@@ -198,13 +209,17 @@ impl EndgameSolver {
 		}
 	}
 
-	fn winnable(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap, depth: usize) -> WinnableResult {
+	fn winnable(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap, depth: usize, deadline: &Instant) -> WinnableResult {
 		let Game { state, .. } = game;
 
 		let hash = game.hash();
 		if self.simple_cache.contains_key(&hash) {
 			// info!("cached!!");
 			return self.simple_cache[&hash].clone();
+		}
+
+		if Instant::now() > *deadline {
+			return UNWINNABLE;
 		}
 
 		match EndgameSolver::trivially_winnable(game, player_turn) {
@@ -226,7 +241,7 @@ impl EndgameSolver {
 					return UNWINNABLE;
 				}
 
-				let performs = self.possible_actions(game, player_turn, remaining);
+				let performs = self.possible_actions(game, player_turn, remaining, deadline);
 
 				if performs.is_empty() {
 					// info!("no possible actions in winnable");
@@ -239,19 +254,23 @@ impl EndgameSolver {
 					performs.iter().map(|(p, _)| p.fmt_s(state, player_turn)).join(", ")).green());
 
 				let hypo_games = EndgameSolver::gen_hypo_games(game, remaining, false);
-				let result = self.optimize(hypo_games, performs, player_turn, depth);
+				let result = self.optimize(hypo_games, performs, player_turn, depth, deadline);
 				self.simple_cache.insert(hash, result.clone());
 				result
 			}
 		}
 	}
 
-	fn possible_actions(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap) -> Vec<(PerformAction, Vec<Option<Identity>>)> {
+	fn possible_actions(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap, deadline: &Instant) -> Vec<(PerformAction, Vec<Option<Identity>>)> {
 		let Game { common, state, .. } = game;
 		let mut actions = Vec::new();
 
 		let playables = game.players[player_turn].thinks_playables(&game.frame(), player_turn);
 		for order in playables {
+			if Instant::now() > *deadline {
+				return Vec::new();
+			}
+
 			match state.deck[order].id() {
 				None => {
 					info!("can't identify {}", order);
@@ -259,7 +278,7 @@ impl EndgameSolver {
 				},
 				Some(_) => {
 					let perform = PerformAction::Play { table_id: Some(game.table_id), target: order };
-					match self.winnable_if(state, player_turn, &perform, remaining, 0) {
+					match self.winnable_if(state, player_turn, &perform, remaining, 0, deadline) {
 						SimpleResult::Unwinnable => {
 							// info!("unwinnable if play");
 							continue;
@@ -279,7 +298,7 @@ impl EndgameSolver {
 		let too_many_clues = game.state.action_list.iter().rev()
 			.take_while(|action| !matches!(action, Action::Play(_) | Action::Discard(_)))
 			.filter(|action| matches!(action, Action::Clue(_))).count() > game.state.num_players;
-		let clue_winnable = state.clue_tokens > 0 && !too_many_clues && match self.winnable_if(state, player_turn, &default_clue, remaining, 0) {
+		let clue_winnable = state.clue_tokens > 0 && !too_many_clues && match self.winnable_if(state, player_turn, &default_clue, remaining, 0, deadline) {
 			SimpleResult::Unwinnable => false,
 			SimpleResult::AlwaysWinnable => true,
 			_ => panic!("Shouldn't return WinnableWithDraws enum variant from giving a clue!")
@@ -305,7 +324,11 @@ impl EndgameSolver {
 
 		if state.pace() > 0 {
 			for perform in game.convention.find_all_discards(game, player_turn) {
-				match self.winnable_if(state, player_turn, &perform, remaining, 0) {
+				if Instant::now() > *deadline {
+					return Vec::new();
+				}
+
+				match self.winnable_if(state, player_turn, &perform, remaining, 0, deadline) {
 					SimpleResult::Unwinnable => continue,
 					SimpleResult::WinnableWithDraws(winnable_draws) => {
 						actions.push((perform, winnable_draws));
@@ -325,13 +348,17 @@ impl EndgameSolver {
 		game.simulate_action(&util::perform_to_action(state, action, player_turn, None))
 	}
 
-	fn optimize(&mut self, hypo_games: (Vec<GameArr>, Vec<GameArr>), actions: Vec<(PerformAction, Vec<Option<Identity>>)>, player_turn: usize, depth: usize) -> WinnableResult {
+	fn optimize(&mut self, hypo_games: (Vec<GameArr>, Vec<GameArr>), actions: Vec<(PerformAction, Vec<Option<Identity>>)>, player_turn: usize, depth: usize, deadline: &Instant) -> WinnableResult {
 		let (undrawn, drawn) = hypo_games;
 		let next_player_index = undrawn[0].game.state.next_player_index(player_turn);
 		let mut best_winrate = Frac::ZERO;
 		let mut best_actions = Vec::new();
 
 		for (perform, winnable_draws) in actions {
+			if Instant::now() > *deadline {
+				return UNWINNABLE;
+			}
+
 			let mut action_winrate = Frac::ZERO;
 			let mut rem_prob = Frac::ONE;
 
@@ -362,14 +389,14 @@ impl EndgameSolver {
 				else {
 					info!("{}drawing {} after {} {} cards_left {} endgame_turns {:?} {{",
 						(0..depth).map(|_| "  ").join(""),
-						drew.and_then(|d| d.map(|id| id.fmt(&game.state.variant))).unwrap_or("xx".to_owned()),
+						drew.and_then(|d| d.map(|id| game.state.log_id(&id))).unwrap_or("xx".to_owned()),
 						perform.fmt_s(&game.state, player_turn),
-						new_game.state.hands[player_turn].iter().map(|&o| new_game.state.deck[o].id().map(|id| id.fmt(&game.state.variant)).unwrap_or("xx".to_owned())).join(","),
+						new_game.state.hands[player_turn].iter().map(|&o| new_game.state.log_iden(&new_game.state.deck[o])).join(","),
 						new_game.state.cards_left,
 						new_game.state.endgame_turns);
 				}
 
-				let res = match self.winnable(&new_game, next_player_index, remaining, depth + 1) {
+				let res = match self.winnable(&new_game, next_player_index, remaining, depth + 1, deadline) {
 					Err(msg) => {
 						format!("{}}} {} unwinnable ({})",
 							(0..depth).map(|_| "  ").join(""),

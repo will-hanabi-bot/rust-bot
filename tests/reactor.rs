@@ -109,10 +109,11 @@ fn it_understands_good_touch() {
 		..TestOptions::default()
 	});
 
-	take_turn(&mut game, "Cathy clues red to Alice (slots 1,2)");
+	take_turn(&mut game, "Cathy clues red to Alice (slots 1,2)");	// Targeting r3 in slot 1
+	take_turn(&mut game, "Alice plays r3 (slot 1)");
 
-	// Alice's slot 2 should be known r5.
-	ex_asserts::has_inferences(&game, None, Player::Alice, 2, &["r5"]);
+	// Alice's slot 2 should be r4,r5.
+	ex_asserts::has_inferences(&game, None, Player::Alice, 2, &["r4", "r5"]);
 
 	// Bob's slot 1 should be known r4.
 	ex_asserts::has_inferences(&game, None, Player::Bob, 1, &["r4"]);
@@ -256,4 +257,50 @@ fn it_understands_a_reverse_reactive_clue() {
 	take_turn(&mut game, "Bob plays b1, drawing y3");
 
 	assert!(game.common.thinks_playables(&game.frame(), Player::Cathy as usize).contains(&game.state.hands[Player::Cathy as usize][1]));
+}
+
+#[test]
+fn it_understands_a_playable_pink_promise() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "r1", "r4", "y4", "y4"],
+		&["g4", "g1", "g4", "b4", "b4"],
+	], TestOptions {
+		play_stacks: Some(vec![1, 2, 1, 1, 2]),
+		variant: "Pink (5 Suits)",
+		starting: Player::Cathy,
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues 2 to Alice (slots 2,4)");
+
+	// Alice should play slot 2.
+	let action = game.take_action();
+	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][1] });
+	ex_asserts::has_inferences(&game, None, Player::Alice, 2, &["r2", "g2", "b2"]);
+
+	// Alice's slot 4 is not playable.
+	let playables = game.common.thinks_playables(&game.frame(), Player::Alice as usize);
+	assert!(playables.len() == 1 && playables[0] == game.state.hands[Player::Alice as usize][1]);
+}
+
+#[test]
+fn it_understands_a_brown_tcm() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "r1", "r4", "y4", "y4"],
+		&["g4", "g1", "g4", "b4", "b4"],
+	], TestOptions {
+		play_stacks: Some(vec![1, 2, 1, 1, 2]),
+		variant: "Brown (5 Suits)",
+		starting: Player::Cathy,
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues 1 to Alice (slots 2,4)");
+
+	// Alice does not have a playable.
+	let playables = game.common.thinks_playables(&game.frame(), Player::Alice as usize);
+	assert!(playables.is_empty());
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][0]].status, CardStatus::None);
 }

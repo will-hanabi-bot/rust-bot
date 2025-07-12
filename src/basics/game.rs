@@ -181,13 +181,13 @@ impl Game {
 	}
 
 	pub fn simulate_clue(&self, action: &ClueAction) -> Self {
-		let level = log::max_level();
+		// let level = log::max_level();
 		// log::set_max_level(LevelFilter::Off);
 
 		let mut hypo_game = self.simulate_clean();
 		hypo_game.interpret_clue(action);
 
-		log::set_max_level(level);
+		// log::set_max_level(level);
 
 		hypo_game.catchup = false;
 		hypo_game.state.turn_count += 1;
@@ -294,7 +294,7 @@ impl Game {
 
 			let mut note: String = frame.get_note(common, order);
 			let link_note = common.links.iter().filter_map(|link| match link {
-				Link::Promised { orders, id, .. } => orders.contains(&order).then_some(id.fmt(&state.variant)),
+				Link::Promised { orders, id, .. } => orders.contains(&order).then_some(state.log_id(id)),
 				_ => None,
 			}).join("? ");
 

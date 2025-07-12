@@ -1,9 +1,12 @@
+use std::sync::LazyLock;
+
 use super::action::Action;
 use super::clue::{BaseClue, Clue, ClueKind};
 use super::card::{Card, Identifiable, Identity, Thought};
 use super::variant::{card_count, card_touched, colourable_suits, Variant};
 
 use itertools::Itertools;
+use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct State {
@@ -31,6 +34,9 @@ impl State {
 	pub fn new(player_names: Vec<String>, our_player_index: usize, variant: Variant) -> Self {
 		let num_players = player_names.len();
 		let num_suits = variant.suits.len();
+		let cards_left = (0..num_suits).map(|suit_index| (1..=5).map(|rank|
+			card_count(&variant, &Identity { suit_index, rank })).sum::<usize>()).sum();
+
 		Self {
 			turn_count: 0,
 			clue_tokens: 8,
@@ -42,7 +48,7 @@ impl State {
 			num_players,
 			our_player_index,
 			card_order: 0,
-			cards_left: 50,
+			cards_left,
 			play_stacks: vec![0; num_suits],
 			discard_stacks: vec![vec![0; 5]; num_suits],
 			max_ranks: vec![5; num_suits],
@@ -54,9 +60,7 @@ impl State {
 
 	pub fn hash(&self) -> String {
 		let hands = self.hands.concat().iter().join(",");
-		let deck = self.deck.iter().map(|card|
-			card.id().map(|i| i.fmt(&self.variant)).unwrap_or("xx".to_owned())
-		).join(",");
+		let deck = self.deck.iter().map(|card| self.log_iden(card)).join(",");
 
 		format!("{},{},{},{:?}", deck, hands, self.clue_tokens, self.endgame_turns)
 	}
@@ -161,6 +165,10 @@ impl State {
 		}
 	}
 
+	pub fn includes_variant(&self, regex: &LazyLock<Regex>) -> bool {
+		self.variant.suits.iter().any(|suit| regex.is_match(suit))
+	}
+
 	pub fn remaining_multiplicity<'a>(&self, ids: impl Iterator<Item = &'a Identity>) -> usize {
 		ids.map(|&id| card_count(&self.variant, &id) - self.base_count(&id)).sum()
 	}
@@ -172,5 +180,20 @@ impl State {
 	pub fn expand_short(&self, short: &str) -> Identity {
 		let suit_index = self.variant.short_forms.iter().position(|form| form == &short[0..1]).unwrap_or_else(|| panic!("Colour {} doesn't exist in selected variant", short));
 		Identity { suit_index, rank: short[1..2].parse().unwrap_or_else(|_| panic!("Rank {} doesn't exist in selected variant", short)) }
+	}
+
+	pub fn log_id(&self, id: &Identity) -> String {
+		format!("{}{}", self.variant.short_forms[id.suit_index], id.rank)
+	}
+
+	pub fn log_oid(&self, id: &Option<&Identity>) -> String {
+		match id {
+			Some(id) => self.log_id(id),
+			None => "xx".to_string(),
+		}
+	}
+
+	pub fn log_iden<T>(&self, iden: &T) -> String where T: Identifiable {
+		self.log_oid(&iden.id())
 	}
 }

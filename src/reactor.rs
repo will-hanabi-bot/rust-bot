@@ -43,7 +43,7 @@ impl Reactor {
 		let bad_playable = state.hands.concat().into_iter().find(|o| hypo.meta[*o].status == CardStatus::CalledToPlay && !hypo.me().hypo_plays.contains(o));
 
 		if let Some(bad_playable) = bad_playable {
-			warn!("clue {} results in {} looking playable!", clue.fmt(state, *target), state.deck[bad_playable].id().map(|&i| i.fmt(&state.variant)).unwrap_or(format!("order {}", bad_playable)));
+			warn!("clue {} results in {} looking playable!", clue.fmt(state, *target), state.deck[bad_playable].id().map(|i| state.log_id(i)).unwrap_or(format!("order {}", bad_playable)));
 			return -100.0;
 		}
 
@@ -68,7 +68,7 @@ impl Reactor {
 
 		info!("good touch: {}, playables: [{}], duped: {}, trash: {}, fill: {}, elim: {}, bad_touch: {:?}",
 			good_touch,
-			playables.iter().map(|&o| state.deck[o].id().map(|&i| i.fmt(&state.variant)).unwrap_or("xx".to_string())).collect::<Vec<String>>().join(", "),
+			playables.iter().map(|&o| state.log_iden(&state.deck[o])).collect::<Vec<String>>().join(", "),
 			duped_playables,
 			trash.len(),
 			fill.len(),
@@ -146,7 +146,7 @@ impl Reactor {
 				} + if sieving_trash() { -10.0 } else { 0.0 };
 				let new_value = value + mult(diff);
 
-				info!("{} playing {} {}{}", state.player_names[player_index], id.map(|i| i.fmt(&state.variant)).unwrap_or_else(|| "xx".to_owned()), mult(diff), if sieving_trash() { ", sieving trash!" } else { "" });
+				info!("{} playing {} {}{}", state.player_names[player_index], state.log_oid(&id), mult(diff), if sieving_trash() { ", sieving trash!" } else { "" });
 				Reactor::best_value(&Reactor::advance_game(game, &action), offset + 1, new_value)
 			});
 			return play_actions.fold(f32::MIN, |a, b| a.max(b));
@@ -180,7 +180,7 @@ impl Reactor {
 				let action = Action::discard(player_index, *discard, *suit_index as i32, *rank as i32, false);
 
 				let dc_value = game.me().card_value(&frame, id, Some(*discard)) as f32;
-				(id.fmt(&state.variant), action, dc_value)
+				(state.log_id(id), action, dc_value)
 			}
 		};
 
@@ -431,25 +431,11 @@ impl Convention for Reactor {
 			let cloned_game = game.clone();
 			let player_index = state.our_player_index;
 
-			let result = futures::executor::block_on(tokio::time::timeout(std::time::Duration::from_secs(5), tokio::task::spawn_blocking(move || solver.solve_game(&cloned_game, player_index))));
+			let result = solver.solve_game(&cloned_game, player_index);
 			match result {
-				Ok(result) => {
-					match result {
-						Ok(result) => {
-							match result {
-								Ok((perform, _)) => return perform,
-								Err(err) => {
-									info!("couldn't solve endgame: {}", err);
-								}
-							}
-						}
-						Err(err) => {
-							warn!("Error in endgame solver task: {}", err);
-						}
-					}
-				}
-				Err(_) => {
-					info!("couldn't solve endgame: timed out after 5 seconds");
+				Ok((perform, _)) => return perform,
+				Err(err) => {
+					info!("couldn't solve endgame: {}", err);
 				}
 			}
 		}

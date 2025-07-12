@@ -1,11 +1,12 @@
 use log::{info, warn};
 use std::mem;
 
-use crate::basics::card::{CardStatus, Identifiable};
+use crate::basics::card::{CardStatus, Identifiable, Identity};
 use crate::basics::clue::ClueKind;
 use crate::basics::game::frame::Frame;
 use crate::basics::game::Game;
 use crate::basics::player::WaitingConnection;
+use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
 use crate::basics::action::{ClueAction};
@@ -36,6 +37,32 @@ impl Reactor {
 		let ClueAction { target, list, clue, .. } = &action;
 		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
 
+		if clue.kind == ClueKind::RANK && game.state.includes_variant(&PINKISH) {
+			let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
+			let mut focus = newly_touched.iter().max().unwrap();
+
+			// Trash pink promise
+			if (0..game.state.variant.suits.len()).all(|suit_index| game.state.is_basic_trash(&Identity { suit_index, rank: clue.value })) {
+				game.common.thoughts[*focus].inferred.retain(|i| game.state.is_basic_trash(i));
+				game.meta[*focus].trash = true;
+			}
+			// Playable pink promise
+			else if (0..game.state.variant.suits.len()).all(|suit_index| {
+				let id = Identity { suit_index, rank: clue.value };
+				game.state.is_basic_trash(&id) || game.state.is_playable(&id)
+			}) {
+				// Move focus to lock card if touched
+				if let Some(lock_order) = game.state.hands[*target].iter().filter(|&&o| !prev.state.deck[o].clued).min() {
+					if list.contains(lock_order) {
+						focus = lock_order;
+					}
+				}
+
+				game.common.thoughts[*focus].inferred.retain(|i| game.state.is_playable(i) && i.rank == clue.value);
+				game.meta[*focus].focused = true;
+			}
+		}
+
 		let frame = Frame::new(&game.state, &game.meta);
 		game.common.good_touch_elim(&frame);
 		game.common.refresh_links(&frame, true);
@@ -59,10 +86,18 @@ impl Reactor {
 			return ClueInterp::Reveal;
 		}
 
-		let trash_push = newly_touched.iter().all(|&o| common.order_kt(&frame, o));
+		let trash_push = common.order_kt(&frame, *newly_touched.iter().max().unwrap());
 		if trash_push {
-			info!("trash push!");
-			return Reactor::ref_play(prev, game, action);
+			// Brownish TCM if there is at least 1 useful unplayable brown and clue didn't touch chop
+			if state.includes_variant(&BROWNISH) && clue.kind == ClueKind::RANK &&
+				state.variant.suits.iter().enumerate().any(|(suit_index, suit)| BROWNISH.is_match(suit) && state.play_stacks[suit_index] + 1 < state.max_ranks[suit_index]) &&
+				!newly_touched.contains(&state.hands[*target][0]) {
+					info!("brown direct discard!");
+			}
+			else {
+				info!("trash push!");
+				return Reactor::ref_play(prev, game, action);
+			}
 		}
 
 		let loaded = common.thinks_loaded(&frame, *target);
@@ -103,7 +138,12 @@ impl Reactor {
 			}).unwrap();
 
 		if *receiver == state.our_player_index {
-			let focus_slot = state.hands[*receiver].iter().position(|o| o == focus).unwrap() + 1;
+			let focus_index = state.hands[*receiver].iter().position(|o| o == focus).unwrap();
+			let focus_slot = match clue.kind {
+				ClueKind::COLOUR => if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 },
+				ClueKind::RANK => if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 }
+			};
+
 			common.waiting.push(WaitingConnection {
 				giver: *giver,
 				reacter,
@@ -137,7 +177,7 @@ impl Reactor {
 							}
 							Some((index, target)) => {
 								let target_slot = index + 1;
-								let focus_slot = focus_index + 1;
+								let focus_slot = if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 };
 								let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 								if react_slot == 0 {
 									react_slot = 5;
@@ -157,7 +197,7 @@ impl Reactor {
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
-						let focus_slot = focus_index + 1;
+						let focus_slot = if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 };
 						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 						if react_slot == 0 {
 							react_slot = 5;
@@ -185,7 +225,7 @@ impl Reactor {
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
-						let focus_slot = focus_index + 1;
+						let focus_slot = if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 };
 						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 						if react_slot == 0 {
 							react_slot = 5;
@@ -273,13 +313,19 @@ impl Reactor {
 
 	fn ref_discard(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
 		let Game { state, .. } = game;
-		let ClueAction { target: receiver, list, .. } = &action;
+		let ClueAction { target: receiver, list, clue, .. } = &action;
 		let hand = &state.hands[*receiver];
 		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 
 		if let Some(lock_order) = hand.iter().filter(|&&o| !prev.state.deck[o].clued).min() {
 			if list.contains(lock_order) {
 				info!("locked!");
+
+				// Lock pink promise
+				if clue.kind == ClueKind::RANK && state.includes_variant(&PINKISH) {
+					game.common.thoughts[*lock_order].inferred.retain(|i| i.rank == clue.value);
+					game.meta[*lock_order].focused = true;
+				}
 
 				for &order in hand {
 					let meta = &mut game.meta[order];

@@ -54,7 +54,7 @@ pub fn check_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> (Vec<usiz
 				player_index != *giver && frame.is_touched(o) && o != *order);
 
 			if !copy.is_empty() {
-				info!("duplicate {} revealed! copy of order {}", id.fmt(&state.variant), copy[0]);
+				info!("duplicate {} revealed! copy of order {}", state.log_id(id), copy[0]);
 				return true;
 			}
 		}

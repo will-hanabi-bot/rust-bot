@@ -25,6 +25,8 @@ static VARIANTS: LazyLock<HashMap<&str, Variant>> = LazyLock::new(|| {
         ("6 Suits", Variant::new(0, "6 Suits", &["Red", "Yellow", "Green", "Blue", "Purple", "Teal"], &["r", "y", "g", "b", "p", "t"])),
         ("Rainbow (5 Suits)", Variant::new(16, "Rainbow", &["Red", "Yellow", "Green", "Blue", "Rainbow"], &["r", "y", "g", "b", "m"])),
         ("Black (5 Suits)", Variant::new(2, "Black", &["Red", "Yellow", "Green", "Blue", "Black"], &["r", "y", "g", "b", "k"])),
+        ("Pink (5 Suits)", Variant::new(2, "Pink", &["Red", "Yellow", "Green", "Blue", "Pink"], &["r", "y", "g", "b", "i"])),
+        ("Brown (5 Suits)", Variant::new(2, "Brown", &["Red", "Yellow", "Green", "Blue", "Brown"], &["r", "y", "g", "b", "n"])),
     ])
 });
 
@@ -128,7 +130,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 		let count = state.base_count(&id) + visible_find(state, &players[state.our_player_index], &id, Default::default(), |_, _| true).len();
 
 		if count > card_count(&state.variant, &id) {
-			panic!("Found {count} copies of {}!", id.fmt(&state.variant));
+			panic!("Found {count} copies of {}!", state.log_id(&id));
 		}
 	}
 
@@ -186,7 +188,7 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 					let count = state.base_count(&draw) + visible_find(state, game.me(), &draw, Default::default(), |_, _| true).len();
 
 					if count + 1 > card_count(&state.variant, &draw) {
-						panic!("Found {} copies of {}!", count + 1, draw.fmt(&state.variant));
+						panic!("Found {} copies of {}!", count + 1, state.log_id(&draw));
 					}
 					game.handle_action(&Action::Draw(DrawAction { player_index: turn_taker, order: state.card_order, suit_index: suit_index as i32, rank: rank as i32 }))
 				},
@@ -194,6 +196,7 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 					if turn_taker != state.our_player_index {
 						panic!("Missing draw for {}'s action {:?}", state.player_names[turn_taker], action);
 					}
+					game.handle_action(&Action::Draw(DrawAction { player_index: turn_taker, order: state.card_order, suit_index: -1, rank: -1 }))
 				}
 			}
 		}
@@ -380,7 +383,7 @@ pub fn fully_known(game: &mut Game, player_index: Player, slot: usize, short: &s
 
 	if let Some(deck_id) = card.id() {
 		if deck_id != &id {
-			panic!("{}'s card at slot {} is not {}! found {}", state.player_names[player_index as usize], slot, id.fmt(&state.variant), deck_id.fmt(&state.variant));
+			panic!("{}'s card at slot {} is not {}! found {}", state.player_names[player_index as usize], slot, state.log_id(&id), state.log_id(deck_id));
 		}
 	}
 

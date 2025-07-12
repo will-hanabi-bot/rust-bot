@@ -81,11 +81,11 @@ impl Player {
 	}
 
 	pub fn str_infs(&self, state: &State, order: usize) -> String {
-		self.thoughts[order].inferred.iter().sorted_by_key(|&i| i.suit_index * 10 + i.rank).map(|&id| id.fmt(&state.variant)).join(",")
+		self.thoughts[order].inferred.iter().sorted_by_key(|&i| i.suit_index * 10 + i.rank).map(|id| state.log_id(id)).join(",")
 	}
 
 	pub fn str_poss(&self, state: &State, order: usize) -> String {
-		self.thoughts[order].possible.iter().sorted_by_key(|&i| i.suit_index * 10 + i.rank).map(|&id| id.fmt(&state.variant)).join(",")
+		self.thoughts[order].possible.iter().sorted_by_key(|&i| i.suit_index * 10 + i.rank).map(|id| state.log_id(id)).join(",")
 	}
 
 	pub fn refer(&self, frame: &Frame, hand: &[usize], order: usize, left: bool) -> usize {
@@ -360,7 +360,7 @@ impl Player {
 							for link in &self.links {
 								if let Link::Promised { id, .. } = link {
 									if id.rank != hypo_stacks[id.suit_index] + 1 {
-										warn!("tried to add linked {} ({}) onto hypo stacks, but they were at {hypo_stacks:?} {:?}", id.fmt(&state.variant), order, played);
+										warn!("tried to add linked {} ({}) onto hypo stacks, but they were at {hypo_stacks:?} {:?}", state.log_id(id), order, played);
 										unplayable.insert(order);
 									}
 									else {
@@ -372,7 +372,7 @@ impl Player {
 						},
 						Some(id) => {
 							if id.rank != hypo_stacks[id.suit_index] + 1 {
-								warn!("tried to add {} ({}) onto hypo stacks, but they were at {hypo_stacks:?} {:?}", id.fmt(&state.variant), order, played);
+								warn!("tried to add {} ({}) onto hypo stacks, but they were at {hypo_stacks:?} {:?}", state.log_id(id), order, played);
 								unplayable.insert(order);
 							}
 							else {

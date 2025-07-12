@@ -90,12 +90,13 @@ impl VariantManager {
 static VARIANTS_URL: &str = "https://raw.githubusercontent.com/Hanabi-Live/hanabi-live/main/packages/game/src/json/variants.json";
 static COLOURS_URL: &str = "https://raw.githubusercontent.com/Hanabi-Live/hanabi-live/main/packages/game/src/json/suits.json";
 
-static WHITISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"White|Gray|Light|Null").unwrap());
-static RAINBOWISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Rainbow|Omni").unwrap());
-static PINKISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Pink|Omni").unwrap());
-static BROWNISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Brown|Muddy|Cocoa|Null").unwrap());
-static DARK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Black|Dark|Gray|Cocoa").unwrap());
-static NO_COLOUR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"White|Gray|Light|Null|Rainbow|Omni|Prism").unwrap());
+pub static WHITISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"White|Gray|Light|Null").unwrap());
+pub static RAINBOWISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Rainbow|Omni").unwrap());
+pub static PINKISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Pink|Omni").unwrap());
+pub static BROWNISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Brown|Muddy|Cocoa|Null").unwrap());
+pub static DARK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Black|Dark|Gray|Cocoa").unwrap());
+pub static PRISM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Prism").unwrap());
+pub static NO_COLOUR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"White|Gray|Light|Null|Rainbow|Omni|Prism").unwrap());
 
 pub fn colourable_suits(variant: &Variant) -> Vec<String> {
 	variant.suits.iter().filter(|suit| !NO_COLOUR.is_match(suit)).map(|suit| suit.to_string()).collect()
@@ -124,6 +125,10 @@ pub fn id_touched(id: &Identity, variant: &Variant, clue: &BaseClue) -> bool {
 
 		if RAINBOWISH.is_match(suit) {
 			return true;
+		}
+
+		if PRISM.is_match(suit) {
+			return ((rank - 1) % colourable_suits(variant).len()) == *value;
 		}
 
 		variant.suits[*suit_index] == colourable_suits(variant)[*value]

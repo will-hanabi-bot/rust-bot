@@ -164,10 +164,9 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 	let Game { common, state, players, meta, .. } = game;
 	let frame = Frame::new(state, meta);
 
+	common.card_elim(state);
 	if good_touch {
 		common.good_touch_elim(&frame);
-	} else {
-		common.card_elim(state);
 	}
 	common.refresh_links(&frame, good_touch);
 	common.update_hypo_stacks(&frame, &[]);
@@ -182,10 +181,9 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 			thought.reset = *reset;
 		}
 
+		player.card_elim(state);
 		if good_touch {
 			player.good_touch_elim(&frame);
-		} else {
-			player.card_elim(state);
 		}
 
 		player.refresh_links(&frame, good_touch);
