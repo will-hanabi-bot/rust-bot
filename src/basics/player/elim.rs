@@ -1,4 +1,5 @@
 use crate::basics::game::frame::Frame;
+use crate::basics::identity_set::IdentitySet;
 use crate::basics::variant::{all_ids, card_count};
 use crate::basics::card::{IdOptions, Identifiable, Identity, Thought};
 use crate::basics::state::State;
@@ -9,14 +10,14 @@ use itertools::Itertools;
 use log::{info};
 
 impl Player {
-	fn update_map(&mut self, id: &Identity, exclude: Vec<usize>) -> (bool, Vec<Identity>) {
+	fn update_map(&mut self, id: Identity, exclude: Vec<usize>) -> (bool, Vec<Identity>) {
 		let mut changed = false;
 		let mut recursive_ids = Vec::new();
 		let mut cross_elim_removals = Vec::new();
 
-		if let Some(candidates) = self.id_map.get_mut(id) {
+		if let Some(candidates) = self.id_map.get_mut(&id) {
 			candidates.retain(|&IdEntry { order, player_index }| {
-				let no_elim = exclude.contains(&player_index) || self.certain_map.get(id).is_some_and(|entry|
+				let no_elim = exclude.contains(&player_index) || self.certain_map.get(&id).is_some_and(|entry|
 					entry.iter().any(|(o, unknown_to)| *o == order || unknown_to.contains(&player_index)));
 
 				if no_elim {
@@ -26,8 +27,8 @@ impl Player {
 				let thought = &mut self.thoughts[order];
 
 				changed = true;
-				thought.inferred.retain(|&i| i != *id);
-				thought.possible.retain(|&i| i != *id);
+				thought.inferred.retain(|i| i != id);
+				thought.possible.retain(|i| i != id);
 
 				if thought.possible.is_empty() && !thought.reset {
 					thought.reset_inferences();
@@ -35,7 +36,7 @@ impl Player {
 				// Card can be further eliminated
 				else if thought.possible.len() == 1 {
 					let recursive_id = thought.possible.iter().next().unwrap();
-					match self.certain_map.entry(*recursive_id) {
+					match self.certain_map.entry(recursive_id) {
 						Entry::Occupied(mut e) => { e.get_mut().insert(order, Vec::new()); },
 						Entry::Vacant(e) => {
 							let mut hmap = HashMap::new();
@@ -43,7 +44,7 @@ impl Player {
 							e.insert(hmap);
 						}
 					}
-					recursive_ids.push(*recursive_id);
+					recursive_ids.push(recursive_id);
 					cross_elim_removals.push(order);
 				}
 				false
@@ -57,19 +58,19 @@ impl Player {
 	 * The "typical" empathy operation. If there are enough known instances of an identity, it is removed from every card (including future cards).
 	 * Returns true if at least one card was modified.
 	 */
-	fn basic_card_elim(&mut self, state: &State, ids: &HashSet<Identity>) -> bool {
+	fn basic_card_elim(&mut self, state: &State, ids: &IdentitySet) -> bool {
 		let mut changed = false;
-		let mut recursive_ids = HashSet::new();
-		let mut eliminated: HashSet<Identity> = HashSet::new();
+		let mut recursive_ids = IdentitySet::EMPTY;
+		let mut eliminated = IdentitySet::EMPTY;
 
-		for id in ids {
-			let known_count = state.base_count(id) + self.certain_map.get(id).map(|e| e.len()).unwrap_or(0);
+		for id in ids.iter() {
+			let known_count = state.base_count(id) + self.certain_map.get(&id).map(|e| e.len()).unwrap_or(0);
 
 			if known_count == card_count(&state.variant, id) {
-				eliminated.insert(*id);
+				eliminated.insert(id);
 				let (inner_changed, inner_recursive_ids) = self.update_map(id, Vec::new());
 				changed = changed || inner_changed;
-				recursive_ids.extend(inner_recursive_ids);
+				recursive_ids.extend(&inner_recursive_ids);
 			}
 		}
 
@@ -88,17 +89,17 @@ impl Player {
 	 * Naked pairs - If Alice has 3 cards with [r4,g5], then everyone knows that both r4 and g5 cannot be elsewhere (will be eliminated in basic_elim).
 	 * Returns true if at least one card was modified.
 	 */
-	fn perform_cross_elim(&mut self, state: &State, entries: &[IdEntry], ids: &HashSet<Identity>) -> bool {
+	fn perform_cross_elim(&mut self, state: &State, entries: &[IdEntry], ids: &IdentitySet) -> bool {
 		let mut changed = false;
 		let groups = entries.iter().into_group_map_by(|IdEntry { order, ..}| state.deck[*order].id());
 
 		for (id, group) in groups {
 			if let Some(id) = id {
-				let certains = self.certain_map.get(id).map(|c|
+				let certains = self.certain_map.get(&id).map(|c|
 					c.iter().filter(|(order, _)| !group.iter().any(|e| e.order == **order)).count()
 				).unwrap_or(0);
 
-				if !self.id_map.contains_key(id) || group.len() < state.remaining_multiplicity([*id].iter()) - certains {
+				if !self.id_map.contains_key(&id) || group.len() < state.remaining_multiplicity([id].into_iter()) - certains {
 					continue;
 				}
 
@@ -108,8 +109,8 @@ impl Player {
 		}
 
 		// Now elim all the cards outside of this entry
-		for id in ids {
-			if !self.id_map.contains_key(id) {
+		for id in ids.iter() {
+			if !self.id_map.contains_key(&id) {
 				continue;
 			}
 
@@ -120,7 +121,7 @@ impl Player {
 		self.basic_card_elim(state, ids) || changed
 	}
 
-	fn cross_card_elim(&mut self, state: &State, contained: &Vec<IdEntry>, acc_ids: &HashSet<Identity>, certains: &HashSet<usize>, next_index: usize) -> bool {
+	fn cross_card_elim(&mut self, state: &State, contained: &Vec<IdEntry>, acc_ids: &IdentitySet, certains: &HashSet<usize>, next_index: usize) -> bool {
 		if self.cross_elim_candidates.len() == 1 {
 			return false;
 		}
@@ -145,12 +146,12 @@ impl Player {
 
 		// Check all remaining subsets that contain the next item
 		let item = &self.cross_elim_candidates[next_index];
-		let new_acc_ids: HashSet<Identity> = acc_ids.union(&self.thoughts[item.order].possible).cloned().collect();
+		let new_acc_ids: IdentitySet = acc_ids.union(&self.thoughts[item.order].possible);
 
 		let mut next_contained = contained.clone();
 		next_contained.push(item.clone());
 
-		let new_certains: HashSet<usize> = self.thoughts[item.order].possible.difference(acc_ids).flat_map(|&id|
+		let new_certains: HashSet<usize> = self.thoughts[item.order].possible.difference(acc_ids).iter().flat_map(|id|
 			self.certain_map.get(&id).map(|c| c.keys().copied().collect::<Vec<usize>>()).unwrap_or_default()).collect();
 
 		let mut next_certains = certains.union(&new_certains).cloned().collect::<HashSet<usize>>();
@@ -186,7 +187,7 @@ impl Player {
 				};
 
 				if let Some(id) = id {
-					match self.certain_map.entry(*id) {
+					match self.certain_map.entry(id) {
 						Entry::Occupied(mut e) => { e.get_mut().insert(order, unknown_to); },
 						Entry::Vacant(e) => {
 							let mut hmap = HashMap::new();
@@ -200,9 +201,9 @@ impl Player {
 					self.cross_elim_candidates.push(IdEntry { order, player_index });
 				}
 
-				for id in &thought.possible {
+				for id in thought.possible.iter() {
 					let entry = IdEntry { order, player_index };
-					match self.id_map.entry(*id) {
+					match self.id_map.entry(id) {
 						Entry::Occupied(mut e) => e.get_mut().push(entry),
 						Entry::Vacant(e) => { e.insert(vec![entry]); }
 					}
@@ -210,9 +211,9 @@ impl Player {
 			}
 		}
 
-		let all_ids: HashSet<Identity> = HashSet::from_iter(all_ids(&state.variant));
+		let all_ids = IdentitySet::from_iter(all_ids(&state.variant));
 		self.basic_card_elim(state, &all_ids);
-		while self.cross_card_elim(state, &Vec::new(), &HashSet::new(), &HashSet::new(), 0) {}
+		while self.cross_card_elim(state, &Vec::new(), &IdentitySet::EMPTY, &HashSet::new(), 0) {}
 	}
 
 	pub fn good_touch_elim(&mut self, frame: &Frame) {
@@ -242,8 +243,8 @@ impl Player {
 			}
 		}
 
-		let mut all_ids: HashSet<Identity> = HashSet::from_iter(all_ids(&state.variant));
-		let trash_ids: HashSet<Identity> = all_ids.iter().filter(|i| state.is_basic_trash(i)).cloned().collect();
+		let mut all_ids = IdentitySet::from_iter(all_ids(&state.variant));
+		let trash_ids: IdentitySet = all_ids.filter(|i| state.is_basic_trash(i));
 		all_ids.retain(|i| !trash_ids.contains(i));
 
 		// Remove all trash identities
@@ -262,22 +263,22 @@ impl Player {
 
 	fn elim_link(&mut self, frame: &Frame, matches: &Vec<&usize>, focused_order: &usize, id: Identity, good_touch: bool) {
 		let Frame { state, .. } = frame;
-		info!("eliminating link with inference {} from focus! original {:?}, final {}", state.log_id(&id), matches, focused_order);
+		info!("eliminating link with inference {} from focus! original {:?}, final {}", state.log_id(id), matches, focused_order);
 
 		for &order in matches {
 			let thought = &mut self.thoughts[*order];
 			if order == focused_order {
-				thought.inferred = HashSet::from([id]);
+				thought.inferred = IdentitySet::single(id);
 			}
 			else {
-				thought.inferred.retain(|i| i != &id);
+				thought.inferred.retain(|i| i != id);
 			}
 
 			if thought.inferred.is_empty() && !thought.reset {
 				thought.reset_inferences();
 
 				if good_touch {
-					let mut inferred = thought.inferred.clone();
+					let mut inferred = thought.inferred;
 					inferred.retain(|i| !self.is_trash(frame, i, 999));
 					self.thoughts[*order].inferred = inferred;
 				}
@@ -314,7 +315,7 @@ impl Player {
 			}
 
 			if focused_matches.len() == 1 && inferred.len() == 1 {
-				self.elim_link(frame, &matches, focused_matches[0], *inferred.iter().next().unwrap(), good_touch);
+				self.elim_link(frame, &matches, focused_matches[0], inferred.iter().next().unwrap(), good_touch);
 				continue;
 			}
 
@@ -324,7 +325,7 @@ impl Player {
 				for o in &matches {
 					linked_orders.insert(**o);
 				}
-				self.links.push(Link::Unpromised { orders: matches.into_iter().cloned().collect(), ids: inferred.iter().cloned().collect() });
+				self.links.push(Link::Unpromised { orders: matches.into_iter().cloned().collect(), ids: inferred.to_vec() });
 			}
 		}
 	}
@@ -345,13 +346,13 @@ impl Player {
 						continue;
 					}
 
-					let viable_orders = orders.iter().filter(|&o| self.thoughts[*o].possible.contains(&id)).collect::<Vec<_>>();
+					let viable_orders = orders.iter().filter(|&o| self.thoughts[*o].possible.contains(id)).collect::<Vec<_>>();
 
 					if viable_orders.is_empty() {
-						info!("promised id {} not found among cards {:?}, rewind?", state.log_id(&id), orders)
+						info!("promised id {} not found among cards {:?}, rewind?", state.log_id(id), orders)
 					}
 					else if viable_orders.len() == 1 {
-						self.thoughts[*viable_orders[0]].inferred = HashSet::from([id]);
+						self.thoughts[*viable_orders[0]].inferred = IdentitySet::single(id);
 					}
 					else {
 						new_links.push(Link::Promised { orders: viable_orders.into_iter().cloned().collect(), id, target });
@@ -360,7 +361,7 @@ impl Player {
 				Link::Unpromised { ref orders, ref ids } => {
 					let revealed = orders.iter().filter(|&&o| {
 						let thought = &self.thoughts[o];
-						thought.id().is_some() || ids.iter().any(|i| !thought.possible.contains(i))
+						thought.id().is_some() || ids.iter().any(|i| !thought.possible.contains(*i))
 					}).collect::<Vec<_>>();
 
 					if !revealed.is_empty() {
@@ -373,8 +374,8 @@ impl Player {
 						self.elim_link(frame, &orders.iter().collect(), focused_orders[0], *ids.iter().next().unwrap(), good_touch);
 					}
 
-					if let Some(lost_inference) = ids.iter().find(|&i| orders.iter().any(|&o| !self.thoughts[o].inferred.contains(i))) {
-						info!("linked orders {:?} lost inference {}", orders, state.log_id(lost_inference));
+					if let Some(lost_inference) = ids.iter().find(|&i| orders.iter().any(|&o| !self.thoughts[o].inferred.contains(*i))) {
+						info!("linked orders {:?} lost inference {}", orders, state.log_id(*lost_inference));
 						continue;
 					}
 					new_links.push(link);

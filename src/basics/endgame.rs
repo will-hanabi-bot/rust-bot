@@ -20,14 +20,14 @@ mod winnable;
 type WinnableResult = Result<(Vec<PerformAction>, Frac), String>;
 const UNWINNABLE: WinnableResult = Err(String::new());
 
-pub fn remove_remaining(remaining: &RemainingMap, id: &Identity) -> RemainingMap {
-	let RemainingEntry { missing, .. } = &remaining[id];
+pub fn remove_remaining(remaining: &RemainingMap, id: Identity) -> RemainingMap {
+	let RemainingEntry { missing, .. } = &remaining[&id];
 	let mut new_remaining = remaining.clone();
 
 	if *missing == 1 {
-		new_remaining.remove(id);
+		new_remaining.remove(&id);
 	} else {
-		new_remaining.get_mut(id).unwrap().missing -= 1;
+		new_remaining.get_mut(&id).unwrap().missing -= 1;
 	}
 	new_remaining
 }
@@ -56,9 +56,9 @@ impl EndgameSolver {
 		let deadline = Instant::now() + Duration::from_secs(5);
 		let remaining_ids = find_remaining_ids(game);
 
-		if remaining_ids.iter().filter(|(id, v)| !game.state.is_basic_trash(id) && v.all).count() > 2 {
+		if remaining_ids.iter().filter(|(id, v)| !game.state.is_basic_trash(**id) && v.all).count() > 2 {
 			return Err(format!("couldn't find any {}!", remaining_ids.keys().filter_map(|i|
-				(!game.state.is_basic_trash(i)).then_some(game.state.log_id(i))).join(",")));
+				(!game.state.is_basic_trash(*i)).then_some(game.state.log_id(*i))).join(",")));
 		}
 
 		let level = log::max_level();
@@ -118,9 +118,9 @@ impl EndgameSolver {
 				let thought = &game.me().thoughts[order];
 
 				// Check if this id cannot be assigned to this order
-				let impossible = state.deck[order].id().map(|i| i != id).unwrap_or(false) ||
-					if !state.is_basic_trash(id) {
-						!thought.possibilities().contains(id)
+				let impossible = state.deck[order].id().map(|i| i != *id).unwrap_or(false) ||
+					if !state.is_basic_trash(*id) {
+						!thought.possibilities().contains(*id)
 					}
 					else {
 						!thought.possibilities().is_empty() && !thought.possibilities().iter().any(|i| state.is_basic_trash(i)) &&
@@ -128,7 +128,7 @@ impl EndgameSolver {
 						(!linked_orders.contains(&order) || game.me().links.iter().all(|l| {
 							match l {
 								Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => {
-									!orders.contains(&order) || orders.iter().all(|&o| o == order || (0..ids.len()).any(|i| o == unknown_own[i] && state.is_basic_trash(&ids[i])))
+									!orders.contains(&order) || orders.iter().all(|&o| o == order || (0..ids.len()).any(|i| o == unknown_own[i] && state.is_basic_trash(ids[i])))
 								}
 							}
 						}))
@@ -138,7 +138,7 @@ impl EndgameSolver {
 					return None;
 				}
 
-				let new_remaining = remove_remaining(remaining, id);
+				let new_remaining = remove_remaining(remaining, *id);
 
 				let mut new_ids = ids.clone();
 				new_ids.push(*id);
@@ -241,7 +241,7 @@ impl EndgameSolver {
 				Ok(action)
 			},
 			Err(_) => {
-				let bottom_decked = !remaining.is_empty() && remaining.keys().all(|id| state.is_critical(id) && id.rank != 5);
+				let bottom_decked = !remaining.is_empty() && remaining.keys().all(|id| state.is_critical(*id) && id.rank != 5);
 
 				if EndgameSolver::unwinnable_state(state, player_turn) || bottom_decked {
 					// info!("unwinnable");
@@ -314,11 +314,11 @@ impl EndgameSolver {
 
 		if clue_winnable {
 			// If everyone knows exactly where all the remaining useful cards are, clues are only useful for stalling, so we only need to consider 1 clue
-			let fully_known = (remaining.is_empty() || (remaining.len() == 1 && state.is_basic_trash(remaining.iter().next().unwrap().0))) &&
+			let fully_known = (remaining.is_empty() || (remaining.len() == 1 && state.is_basic_trash(*remaining.iter().next().unwrap().0))) &&
 				state.hands.concat().iter().all(|&o| {
 					match state.deck[o].id() {
 						None => true,
-						Some(id) => state.is_basic_trash(id) || common.thoughts[o].matches(id, &MatchOptions { infer: true, ..Default::default() })
+						Some(id) => state.is_basic_trash(id) || common.thoughts[o].matches(&id, &MatchOptions { infer: true, ..Default::default() })
 					}
 				});
 
@@ -397,7 +397,7 @@ impl EndgameSolver {
 				else {
 					info!("{}drawing {} after {} {} cards_left {} endgame_turns {:?} {{",
 						(0..depth).map(|_| "  ").join(""),
-						new_game.state.log_oid(&drew.as_ref()),
+						new_game.state.log_oid(drew),
 						perform.fmt_s(&game.state, player_turn),
 						new_game.state.hands[player_turn].iter().map(|&o| new_game.state.log_iden(&new_game.state.deck[o])).join(","),
 						new_game.state.cards_left,
@@ -474,7 +474,7 @@ impl EndgameSolver {
 			assert_eq!(new_game.state.deck.len(), state.card_order);
 			new_game.state.deck.push(Card::new(Some(*id), state.card_order + 1, state.turn_count));
 
-			let new_remaining = remove_remaining(remaining, id);
+			let new_remaining = remove_remaining(remaining, *id);
 			drawn.push(GameArr { game: new_game, prob: Frac::new(*missing as u64, state.cards_left as u64), remaining: new_remaining, drew: Some(*id) });
 		}
 
@@ -508,8 +508,8 @@ fn find_remaining_ids(game: &Game) -> RemainingMap {
 	let mut remaining_ids = HashMap::new();
 
 	for id in all_ids(&state.variant) {
-		let total = card_count(&state.variant, &id);
-		let missing = std::cmp::max(0, total - state.base_count(&id) - seen_ids.get(&id).unwrap_or(&0));
+		let total = card_count(&state.variant, id);
+		let missing = std::cmp::max(0, total - state.base_count(id) - seen_ids.get(&id).unwrap_or(&0));
 
 		if missing > 0 {
 			remaining_ids.insert(id, RemainingEntry { missing, all: missing == total });

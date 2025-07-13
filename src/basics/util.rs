@@ -7,7 +7,7 @@ use super::state::State;
 use super::player::Player;
 use super::card::{Identifiable, Identity, MatchOptions};
 
-pub fn visible_find<F>(state: &State, player: &Player, id: &Identity, options: MatchOptions, cond: F) -> Vec<usize> where F: Fn(usize, usize) -> bool {
+pub fn visible_find<F>(state: &State, player: &Player, id: Identity, options: MatchOptions, cond: F) -> Vec<usize> where F: Fn(usize, usize) -> bool {
 	let mut orders = Vec::new();
 
 	for (player_index, hand) in state.hands.iter().enumerate() {
@@ -19,7 +19,7 @@ pub fn visible_find<F>(state: &State, player: &Player, id: &Identity, options: M
 				per_options.symmetric = true;
 			}
 
-			if thought.matches(id, &per_options) && cond(player_index, order) {
+			if thought.matches(&id, &per_options) && cond(player_index, order) {
 				orders.push(order);
 			}
 		}
@@ -39,7 +39,7 @@ pub fn perform_to_action(state: &State, action: &PerformAction, player_index: us
 	let clue_touched = |orders: &[usize], clue: &BaseClue|
 		orders.iter().filter_map(|&order| {
 			match state.deck[order].id().or_else(|| deck.and_then(|d| d[order].id())) {
-				Some(id) => card_touched(id, &state.variant, clue).then_some(order),
+				Some(id) => card_touched(&id, &state.variant, clue).then_some(order),
 				None => None
 			}
 		}).collect::<Vec<_>>();

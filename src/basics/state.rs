@@ -35,7 +35,7 @@ impl State {
 		let num_players = player_names.len();
 		let num_suits = variant.suits.len();
 		let cards_left = (0..num_suits).map(|suit_index| (1..=5).map(|rank|
-			card_count(&variant, &Identity { suit_index, rank })).sum::<usize>()).sum();
+			card_count(&variant, Identity { suit_index, rank })).sum::<usize>()).sum();
 
 		Self {
 			turn_count: 0,
@@ -101,20 +101,20 @@ impl State {
 	}
 
 	/** Returns whether the identity is trash (played already or can never be played).  */
-	pub fn is_basic_trash(&self, id: &Identity) -> bool {
+	pub fn is_basic_trash(&self, id: Identity) -> bool {
 		id.rank <= self.play_stacks[id.suit_index] || id.rank > self.max_ranks[id.suit_index]
 	}
 
 	/** Returns how far the identity is from playable. 0 means that it is playable.*/
-	pub fn playable_away(&self, id: &Identity) -> i32 {
+	pub fn playable_away(&self, id: Identity) -> i32 {
 		id.rank as i32 - (self.play_stacks[id.suit_index] + 1) as i32
 	}
 
-	pub fn is_playable(&self, id: &Identity) -> bool {
+	pub fn is_playable(&self, id: Identity) -> bool {
 		self.playable_away(id) == 0
 	}
 
-	pub fn is_critical(&self, id: &Identity) -> bool {
+	pub fn is_critical(&self, id: Identity) -> bool {
 		!self.is_basic_trash(id) && self.discard_stacks[id.suit_index][id.rank - 1] == (card_count(&self.variant, id) - 1)
 	}
 
@@ -127,7 +127,7 @@ impl State {
 	}
 
 	/** Returns the number of cards matching an identity on the play+discard stacks.  */
-	pub fn base_count(&self, id: &Identity) -> usize {
+	pub fn base_count(&self, id: Identity) -> usize {
 		(if self.play_stacks[id.suit_index] >= id.rank { 1 } else { 0 }) +
 		self.discard_stacks[id.suit_index][id.rank - 1]
 	}
@@ -169,8 +169,8 @@ impl State {
 		self.variant.suits.iter().any(|suit| regex.is_match(suit))
 	}
 
-	pub fn remaining_multiplicity<'a>(&self, ids: impl Iterator<Item = &'a Identity>) -> usize {
-		ids.map(|&id| card_count(&self.variant, &id) - self.base_count(&id)).sum()
+	pub fn remaining_multiplicity(&self, ids: impl Iterator<Item = Identity>) -> usize {
+		ids.map(|id| card_count(&self.variant, id) - self.base_count(id)).sum()
 	}
 
 	pub fn holder_of(&self, order: usize) -> Option<usize> {
@@ -182,13 +182,13 @@ impl State {
 		Identity { suit_index, rank: short[1..2].parse().unwrap_or_else(|_| panic!("Rank {} doesn't exist in selected variant", short)) }
 	}
 
-	pub fn log_id(&self, id: &Identity) -> String {
+	pub fn log_id(&self, id: Identity) -> String {
 		format!("{}{}", self.variant.short_forms[id.suit_index], id.rank)
 	}
 
-	pub fn log_oid(&self, id: &Option<&Identity>) -> String {
+	pub fn log_oid(&self, id: &Option<Identity>) -> String {
 		match id {
-			Some(id) => self.log_id(id),
+			Some(id) => self.log_id(*id),
 			None => "xx".to_string(),
 		}
 	}

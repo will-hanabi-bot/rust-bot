@@ -27,11 +27,11 @@ impl EndgameSolver {
 			match id {
 				None => None,
 				Some(id) => {
-					if state.is_basic_trash(id) {
+					if state.is_basic_trash(*id) {
 						return None;
 					}
 
-					(card_count(&state.variant, id) - state.base_count(id) == orders.len()).then_some(id)
+					(card_count(&state.variant, *id) - state.base_count(*id) == orders.len()).then_some(id)
 				}
 			}
 		}).copied().collect()
@@ -233,7 +233,7 @@ impl EndgameSolver {
 		for id in remaining.keys() {
 			let draw = Card::new(Some(*id), state.card_order + 1, state.turn_count);
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, Some(draw));
-			let new_remaining = remove_remaining(remaining, id);
+			let new_remaining = remove_remaining(remaining, *id);
 
 			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), &new_remaining, depth + 1, deadline);
 			if winnable {
@@ -281,7 +281,7 @@ impl EndgameSolver {
 				match &state.deck[*target].id() {
 					None => new_state.strikes += 1,
 					Some(id) => {
-						if state.is_playable(id) {
+						if state.is_playable(*id) {
 							new_state.play_stacks[id.suit_index] = id.rank;
 
 							if id.rank == 5 {

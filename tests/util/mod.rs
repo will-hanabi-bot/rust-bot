@@ -1,10 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
 use rust_bot::basics;
 use rust_bot::basics::action::{Action, ClueAction, DiscardAction, DrawAction, PlayAction, TurnAction};
 use rust_bot::basics::clue::{BaseClue, CardClue, ClueKind};
 use rust_bot::basics::card::{Identifiable, Identity};
 use rust_bot::basics::game::{Convention, Game};
+use rust_bot::basics::identity_set::IdentitySet;
 use rust_bot::basics::util::visible_find;
 use rust_bot::basics::state::State;
 use rust_bot::basics::variant::{all_ids, card_count, id_touched, Variant};
@@ -121,16 +122,16 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 		let Identity { suit_index, rank } = id;
 		state.discard_stacks[suit_index][rank - 1] += 1;
 
-		if state.discard_stacks[suit_index][rank - 1] > card_count(&state.variant, &id) {
+		if state.discard_stacks[suit_index][rank - 1] > card_count(&state.variant, id) {
 			state.max_ranks[suit_index] = rank - 1;
 		}
 	}
 
 	for id in all_ids(&state.variant) {
-		let count = state.base_count(&id) + visible_find(state, &players[state.our_player_index], &id, Default::default(), |_, _| true).len();
+		let count = state.base_count(id) + visible_find(state, &players[state.our_player_index], id, Default::default(), |_, _| true).len();
 
-		if count > card_count(&state.variant, &id) {
-			panic!("Found {count} copies of {}!", state.log_id(&id));
+		if count > card_count(&state.variant, id) {
+			panic!("Found {count} copies of {}!", state.log_id(id));
 		}
 	}
 
@@ -187,10 +188,10 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 					}
 
 					let Identity { suit_index, rank } = draw;
-					let count = state.base_count(&draw) + visible_find(state, game.me(), &draw, Default::default(), |_, _| true).len();
+					let count = state.base_count(draw) + visible_find(state, game.me(), draw, Default::default(), |_, _| true).len();
 
-					if count + 1 > card_count(&state.variant, &draw) {
-						panic!("Found {} copies of {}!", count + 1, state.log_id(&draw));
+					if count + 1 > card_count(&state.variant, draw) {
+						panic!("Found {} copies of {}!", count + 1, state.log_id(draw));
 					}
 					game.handle_action(&Action::Draw(DrawAction { player_index: turn_taker, order: state.card_order, suit_index: suit_index as i32, rank: rank as i32 }))
 				},
@@ -360,13 +361,13 @@ pub fn pre_clue(game: &mut Game, player_index: Player, slot: usize, clues: &[Tes
 	let Game { state, common, .. } = game;
 	let order = state.hands[player_index as usize][slot - 1];
 
-	let possibilities: HashSet<Identity> = all_ids(&state.variant).filter(|i| clues.iter().all(|clue| {
+	let possibilities = IdentitySet::from_iter(all_ids(&state.variant).filter(|i| clues.iter().all(|clue| {
 		let base = BaseClue { kind: clue.kind, value: clue.value };
-		id_touched(i, &state.variant, &base)
-	})).collect();
+		id_touched(*i, &state.variant, &base)
+	})));
 
 	let thought = &mut common.thoughts[order];
-	thought.inferred = possibilities.clone();
+	thought.inferred = possibilities;
 	thought.possible = possibilities;
 
 	state.deck[order].clued = true;
@@ -384,8 +385,8 @@ pub fn fully_known(game: &mut Game, player_index: Player, slot: usize, short: &s
 	let id = state.expand_short(short);
 
 	if let Some(deck_id) = card.id() {
-		if deck_id != &id {
-			panic!("{}'s card at slot {} is not {}! found {}", state.player_names[player_index as usize], slot, state.log_id(&id), state.log_id(deck_id));
+		if deck_id != id {
+			panic!("{}'s card at slot {} is not {}! found {}", state.player_names[player_index as usize], slot, state.log_id(id), state.log_id(deck_id));
 		}
 	}
 

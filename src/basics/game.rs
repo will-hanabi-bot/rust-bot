@@ -2,11 +2,12 @@ use colored::Colorize;
 use itertools::Itertools;
 use log::{info, LevelFilter};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::sync::Arc;
 
 use super::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
 use crate::basics::card::{CardStatus, ConvData};
+use crate::basics::identity_set::IdentitySet;
 use crate::basics::on_draw;
 use crate::basics::player::Link;
 use super::card::{Identifiable, Identity};
@@ -51,11 +52,11 @@ const HAND_SIZE: [usize; 7] = [0, 0, 5, 5, 4, 4, 3];
 impl Game {
 	pub fn new(table_id: u32, state: State, in_progress: bool, convention: Arc<dyn Convention + Send + Sync>) -> Self {
 		let num_players = state.num_players;
-		let all_possible = HashSet::from_iter(all_ids(&state.variant));
+		let all_possible = IdentitySet::from_iter(all_ids(&state.variant));
 		let hypo_stacks = vec![0; state.variant.suits.len()];
 
 		let players: Vec<Player> = (0..num_players)
-			.map(|i| Player::new(Some(i), all_possible.clone(), hypo_stacks.clone()))
+			.map(|i| Player::new(Some(i), all_possible, hypo_stacks.clone()))
 			.collect();
 		let common = Player::new(None, all_possible, hypo_stacks);
 
@@ -213,8 +214,8 @@ impl Game {
 							hypo_game.handle_action(&Action::draw(
 								*player_index,
 								order,
-								*suit_index as i32,
-								*rank as i32,
+								suit_index as i32,
+								rank as i32,
 							));
 						}
 						None => {
@@ -294,7 +295,7 @@ impl Game {
 
 			let mut note: String = frame.get_note(common, order);
 			let link_note = common.links.iter().filter_map(|link| match link {
-				Link::Promised { orders, id, .. } => orders.contains(&order).then_some(state.log_id(id)),
+				Link::Promised { orders, id, .. } => orders.contains(&order).then_some(state.log_id(*id)),
 				_ => None,
 			}).join("? ");
 

@@ -57,7 +57,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 			let card = &state.deck[order];
 
 			// Not newly clued, trash id or we don't know: don't care about duplicating
-			if !card.newly_clued || card.id().map(|&id| state.is_basic_trash(&id)).unwrap_or(true) {
+			if !card.newly_clued || card.id().map(|id| state.is_basic_trash(id)).unwrap_or(true) {
 				continue;
 			}
 

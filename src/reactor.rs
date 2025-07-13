@@ -117,7 +117,7 @@ impl Reactor {
 			let id = state.deck[chop].id().unwrap();
 
 			// Trash or same-hand dupe
-			state.is_basic_trash(id) || state.hands[player_index].iter().any(|&o| o != chop && state.deck[o].is(id))
+			state.is_basic_trash(id) || state.hands[player_index].iter().any(|&o| o != chop && state.deck[o].is(&id))
 		};
 
 		let mut playables = game.players[player_index].thinks_playables(&frame, player_index);
@@ -135,7 +135,7 @@ impl Reactor {
 					}
 					Some(id) => {
 						let Identity { suit_index, rank } = id;
-						let action = Action::play(player_index, order, *suit_index as i32, *rank as i32);
+						let action = Action::play(player_index, order, suit_index as i32, rank as i32);
 						(Some(id), action)
 					}
 				};
@@ -178,7 +178,7 @@ impl Reactor {
 			}
 			Some(id) => {
 				let Identity { suit_index, rank } = id;
-				let action = Action::discard(player_index, *discard, *suit_index as i32, *rank as i32, false);
+				let action = Action::discard(player_index, *discard, suit_index as i32, rank as i32, false);
 
 				let dc_value = game.me().card_value(&frame, id, Some(*discard)) as f32;
 				(state.log_id(id), action, dc_value)
@@ -227,7 +227,7 @@ impl Reactor {
 					let duplicated = state.hands.concat().iter().any(|o|
 						o != order && game.frame().is_touched(*o) &&
 						state.deck[*o].is(&id) &&
-						common.thoughts[*o].inferred.iter().any(|i| *i != id && !state.is_basic_trash(i)));
+						common.thoughts[*o].inferred.iter().any(|i| i != id && !state.is_basic_trash(i)));
 
 					if duplicated { if state.in_endgame() { 0.5 } else { 0.0 } } else { 1.5 }
 				}
@@ -468,7 +468,7 @@ impl Convention for Reactor {
 			(PerformAction::Play { table_id: Some(*table_id), target: order },
 			match me.thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
 				Some(Identity { suit_index, rank }) => {
-					Action::play(state.our_player_index, order, *suit_index as i32, *rank as i32)
+					Action::play(state.our_player_index, order, suit_index as i32, rank as i32)
 				}
 				None => {
 					Action::play(state.our_player_index, order, -1, -1)
@@ -485,7 +485,7 @@ impl Convention for Reactor {
 				(PerformAction::Discard { table_id: Some(*table_id), target: order },
 				match me.thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
 					Some(Identity { suit_index, rank }) => {
-						Action::discard(state.our_player_index, order, *suit_index as i32, *rank as i32, false)
+						Action::discard(state.our_player_index, order, suit_index as i32, rank as i32, false)
 					}
 					None => {
 						Action::discard(state.our_player_index, order, -1, -1, false)

@@ -1,12 +1,12 @@
 use crate::basics::card::ConvData;
 use crate::basics::game::frame::Frame;
+use crate::basics::identity_set::IdentitySet;
 
 use self::clue::{BaseClue, CardClue};
 use self::card::{Card, Identifiable, Identity, Thought};
 use self::game::{Game};
 use self::action::{ClueAction, DiscardAction, DrawAction, PlayAction};
 use self::variant::{card_count, touch_possibilities};
-use std::collections::HashSet;
 use std::cmp::min;
 
 pub mod action;
@@ -19,12 +19,13 @@ pub mod player;
 pub mod state;
 pub mod variant;
 pub mod util;
+pub mod identity_set;
 
 pub fn on_clue(game: &mut Game, action: &ClueAction) {
 	let Game { common, state, meta, .. } = game;
 	let &ClueAction { target, clue, ref list, giver } = action;
 	let BaseClue { kind, value } = clue;
-	let new_possible: HashSet<Identity> = HashSet::from_iter(touch_possibilities(&clue, &state.variant));
+	let new_possible: IdentitySet = IdentitySet::from_iter(touch_possibilities(&clue, &state.variant));
 
 	for &order in &state.hands[target] {
 		let thought = &mut common.thoughts[order];
@@ -39,19 +40,19 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 			}
 			card.clues.push(CardClue { kind, value, giver, turn: state.turn_count });
 
-			let new_inferred: HashSet<_> = inferred.intersection(&new_possible).cloned().collect();
+			let new_inferred = inferred.intersect(&new_possible);
 			let new_reasoning = new_inferred.len() < inferred.len();
 
 			thought.inferred = new_inferred;
-			thought.possible = possible.intersection(&new_possible).cloned().collect();
+			thought.possible = possible.intersect(&new_possible);
 
 			if new_reasoning {
 				meta[order].reasoning.push(state.turn_count);
 			}
 		}
 		else {
-			thought.inferred = inferred.difference(&new_possible).cloned().collect();
-			thought.possible = possible.difference(&new_possible).cloned().collect();
+			thought.inferred = inferred.difference(&new_possible);
+			thought.possible = possible.difference(&new_possible);
 		}
 	}
 
@@ -76,13 +77,13 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 		}
 
 		// Discarded all copies of an identity
-		if state.discard_stacks[id.suit_index][id.rank - 1] == card_count(&state.variant, &id) {
+		if state.discard_stacks[id.suit_index][id.rank - 1] == card_count(&state.variant, id) {
 			state.max_ranks[id.suit_index] = min(state.max_ranks[id.suit_index], id.rank);
 		}
 
 		let thought = &mut common.thoughts[order];
-		thought.possible = HashSet::from([id]);
-		thought.inferred = HashSet::from([id]);
+		thought.possible = IdentitySet::single(id);
+		thought.inferred = IdentitySet::single(id);
 	}
 
 	let Game { state, .. } = game;
@@ -116,12 +117,12 @@ pub fn on_draw(game: &mut Game, action: &DrawAction) {
 	for (i, player) in players.iter_mut().enumerate() {
 		let id = if i != player_index { id } else { None };
 		if player.thoughts.get(order).is_none() {
-			player.thoughts.push(Thought::new(order, id, &player.all_possible));
+			player.thoughts.push(Thought::new(order, id, player.all_possible));
 		}
 	}
 
 	if common.thoughts.get(order).is_none() {
-		common.thoughts.push(Thought::new(order, None, &common.all_possible));
+		common.thoughts.push(Thought::new(order, None, common.all_possible));
 	}
 
 	if meta.get(order).is_none() {
@@ -147,8 +148,8 @@ pub fn on_play(game: &mut Game, action: &PlayAction) {
 
 		let thought = &mut common.thoughts[order];
 		thought.base = Some(id);
-		thought.possible = HashSet::from([id]);
-		thought.inferred = HashSet::from([id]);
+		thought.possible = IdentitySet::single(id);
+		thought.inferred = IdentitySet::single(id);
 	}
 
 	let Game { state, .. } = game;
@@ -175,9 +176,9 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 		for (i, thought) in player.thoughts.iter_mut().enumerate() {
 			let Thought { possible, inferred, info_lock, reset, .. } = &common.thoughts[i];
 
-			thought.possible = possible.clone();
-			thought.inferred = inferred.clone();
-			thought.info_lock = info_lock.clone();
+			thought.possible = *possible;
+			thought.inferred = *inferred;
+			thought.info_lock = *info_lock;
 			thought.reset = *reset;
 		}
 

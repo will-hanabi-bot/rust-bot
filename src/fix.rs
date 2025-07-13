@@ -64,7 +64,7 @@ pub fn check_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> (Vec<usiz
 	(clued_resets, duplicate_reveals)
 }
 
-pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<&Identity>) -> bool {
+pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<Identity>) -> bool {
 	let Game { state, players, .. } = game;
 
 	if let Some(id) = id {

@@ -126,7 +126,7 @@ impl Action {
 			if *suit_index == -1 || *rank == -1 {
 				"xx".to_string()
 			} else {
-				state.log_id(&Identity { suit_index: *suit_index as usize, rank: *rank as usize })
+				state.log_id(Identity { suit_index: *suit_index as usize, rank: *rank as usize })
 			};
 
 		match self {

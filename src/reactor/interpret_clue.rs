@@ -11,7 +11,6 @@ use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
 use crate::basics::action::{ClueAction};
-use itertools::Itertools;
 
 impl Reactor {
 	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
@@ -44,14 +43,14 @@ impl Reactor {
 			let mut focus = newly_touched.iter().max().unwrap();
 
 			// Trash pink promise
-			if (0..game.state.variant.suits.len()).all(|suit_index| game.state.is_basic_trash(&Identity { suit_index, rank: clue.value })) {
+			if (0..game.state.variant.suits.len()).all(|suit_index| game.state.is_basic_trash(Identity { suit_index, rank: clue.value })) {
 				game.common.thoughts[*focus].inferred.retain(|i| game.state.is_basic_trash(i));
 				game.meta[*focus].trash = true;
 			}
 			// Playable pink promise
 			else if (0..game.state.variant.suits.len()).all(|suit_index| {
 				let id = Identity { suit_index, rank: clue.value };
-				game.state.is_basic_trash(&id) || game.state.is_playable(&id)
+				game.state.is_basic_trash(id) || game.state.is_playable(id)
 			}) {
 				// Move focus to lock card if touched
 				if let Some(lock_order) = game.state.hands[*target].iter().filter(|&&o| !prev.state.deck[o].clued).min() {
@@ -324,7 +323,7 @@ impl Reactor {
 
 			playables.iter().flat_map(|&o|
 				if let Some(id) = game.state.deck[o].id() {
-					vec![(o, *id)]
+					vec![(o, id)]
 				}
 				else {
 					game.common.thoughts[o].inferred.iter().map(|i| (o, Identity { suit_index: i.suit_index, rank: i.rank + 1 })).collect::<Vec<_>>()
@@ -334,21 +333,21 @@ impl Reactor {
 
 		// If we know which card is connecting, Update the connecting card to be urgent
 		if let Some(id) = game.state.deck[target].id() {
-			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(id)) {
+			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(&id)) {
 				let conn_id = Identity { suit_index: id.suit_index, rank: id.rank - 1 };
-				game.common.thoughts[*conn_order].inferred.retain(|i| *i == conn_id);
+				game.common.thoughts[*conn_order].inferred.retain(|i| i == conn_id);
 				game.meta[*conn_order].urgent = true;
 				game.meta[*conn_order].status = CardStatus::CalledToPlay;
-				info!("updating connecting {} as {} to be urgent", conn_order, game.state.log_id(&conn_id))
+				info!("updating connecting {} as {} to be urgent", conn_order, game.state.log_id(conn_id))
 			}
 		}
 
 		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
 
-		inferred.retain(|i| game.state.is_playable(i) || possible_conns.iter().any(|p| p.1 == *i));
+		inferred.retain(|i| game.state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i));
 
 		let reset = inferred.is_empty();
-		game.common.thoughts[target].inferred = inferred.clone();
+		game.common.thoughts[target].inferred = inferred;
 		game.common.thoughts[target].info_lock = Some(inferred);
 
 		if reset {

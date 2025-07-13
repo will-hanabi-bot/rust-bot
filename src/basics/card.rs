@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 use serde::{Deserialize, Serialize};
 
+use crate::basics::identity_set::IdentitySet;
 use super::clue::CardClue;
 
 #[derive(Debug, Clone, Default)]
@@ -18,9 +18,9 @@ pub struct MatchOptions {
 }
 
 pub trait Identifiable {
-	fn identity(&self, options: &IdOptions) -> Option<&Identity>;
+	fn identity(&self, options: &IdOptions) -> Option<Identity>;
 
-	fn id(&self) -> Option<&Identity> {
+	fn id(&self) -> Option<Identity> {
 		self.identity(&Default::default())
 	}
 
@@ -55,8 +55,8 @@ pub struct Identity {
 }
 
 impl Identifiable for Identity {
-	fn identity(&self, _options: &IdOptions) -> Option<&Identity> {
-		Some(self)
+	fn identity(&self, _options: &IdOptions) -> Option<Identity> {
+		Some(*self)
 	}
 }
 
@@ -105,8 +105,8 @@ impl Card {
 }
 
 impl Identifiable for Card {
-	fn identity(&self, _options: &IdOptions) -> Option<&Identity> {
-		self.base.as_ref()
+	fn identity(&self, _options: &IdOptions) -> Option<Identity> {
+		self.base
 	}
 }
 
@@ -114,9 +114,9 @@ impl Identifiable for Card {
 pub struct Thought {
 	pub order: usize,
 	pub base: Option<Identity>,
-	pub possible: HashSet<Identity>,
-	pub inferred: HashSet<Identity>,
-	pub info_lock: Option<HashSet<Identity>>,
+	pub possible: IdentitySet,
+	pub inferred: IdentitySet,
+	pub info_lock: Option<IdentitySet>,
 	pub reset: bool,
 }
 
@@ -154,38 +154,38 @@ impl ConvData {
 }
 
 impl Thought {
-	pub fn new(order: usize, base: Option<Identity>, poss: &HashSet<Identity>) -> Self {
+	pub fn new(order: usize, base: Option<Identity>, poss: IdentitySet) -> Self {
 		Self {
 			order,
 			base,
-			possible: poss.clone(),
-			inferred: poss.clone(),
+			possible: poss,
+			inferred: poss,
 			info_lock: None,
 			reset: false,
 		}
 	}
 
-	pub fn possibilities(&self) -> &HashSet<Identity> {
-		if self.inferred.is_empty() { &self.possible } else { &self.inferred }
+	pub fn possibilities(&self) -> IdentitySet {
+		if self.inferred.is_empty() { self.possible } else { self.inferred }
 	}
 
 	pub fn reset_inferences(&mut self) {
 		self.reset = true;
-		self.inferred = self.possible.clone();
+		self.inferred = self.possible;
 		if let Some(info_lock) = &self.info_lock {
-			self.inferred.retain(|i| info_lock.contains(i));
+			self.inferred.intersect(info_lock);
 		}
 	}
 }
 
 impl Identifiable for Thought {
-	fn identity(&self, options: &IdOptions) -> Option<&Identity> {
+	fn identity(&self, options: &IdOptions) -> Option<Identity> {
 		if self.possible.len() == 1 {
 			return Some(self.possible.iter().next().unwrap())
 		}
 
 		if !options.symmetric && self.base.is_some() {
-			return self.base.as_ref();
+			return self.base;
 		}
 
 		(options.infer && self.inferred.len() == 1).then(|| self.inferred.iter().next().unwrap())

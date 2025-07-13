@@ -112,11 +112,11 @@ pub fn touch_possibilities(clue: &BaseClue, variant: &Variant) -> Vec<Identity> 
 	all_ids(variant).filter(|id| card_touched(id, variant, clue)).collect()
 }
 
-pub fn id_touched(id: &Identity, variant: &Variant, clue: &BaseClue) -> bool {
+pub fn id_touched(id: Identity, variant: &Variant, clue: &BaseClue) -> bool {
 	let BaseClue { kind, value } = clue;
 
 	let Identity { suit_index, rank } = id;
-	let suit = &variant.suits[*suit_index];
+	let suit = &variant.suits[suit_index];
 
 	if *kind == ClueKind::COLOUR {
 		if WHITISH.is_match(suit) {
@@ -131,7 +131,7 @@ pub fn id_touched(id: &Identity, variant: &Variant, clue: &BaseClue) -> bool {
 			return ((rank - 1) % colourable_suits(variant).len()) == *value;
 		}
 
-		variant.suits[*suit_index] == colourable_suits(variant)[*value]
+		variant.suits[suit_index] == colourable_suits(variant)[*value]
 	}
 	else {
 		if BROWNISH.is_match(suit) {
@@ -142,7 +142,7 @@ pub fn id_touched(id: &Identity, variant: &Variant, clue: &BaseClue) -> bool {
 			return true;
 		}
 
-		rank == value
+		rank == *value
 	}
 }
 
@@ -153,12 +153,12 @@ pub fn card_touched(card: &impl Identifiable, variant: &Variant, clue: &BaseClue
 	}
 }
 
-pub fn card_count(variant: &Variant, identity: &Identity) -> usize {
+pub fn card_count(variant: &Variant, identity: Identity) -> usize {
 	let Identity { suit_index, rank } = identity;
-	if DARK.is_match(&variant.suits[*suit_index]) {
+	if DARK.is_match(&variant.suits[suit_index]) {
 		1
 	}
 	else {
-		[3, 2, 2, 2, 1][*rank - 1]
+		[3, 2, 2, 2, 1][rank - 1]
 	}
 }
