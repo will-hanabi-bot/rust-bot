@@ -151,17 +151,18 @@ async fn main() {
 	let variant_manager = VariantManager::new().await;
 	let variant = variant_manager.get_variant(&variant);
 
-	let mut deck = all_ids(&variant).flat_map(|i| vec![i; card_count(&variant, &i)]).collect::<Vec<_>>();
+	let deck = all_ids(&variant).flat_map(|i| vec![i; card_count(&variant, &i)]).collect::<Vec<_>>();
 
 	for i in seed..(seed+num_games) {
 		let mut rng = ChaCha8Rng::seed_from_u64(i as u64);
-		deck.shuffle(&mut rng);
+		let mut seeded_deck = deck.clone();
+		seeded_deck.shuffle(&mut rng);
 
-		let GameSummary { score, result, actions, notes } = simulate_game(&deck, &variant);
+		let GameSummary { score, result, actions, notes } = simulate_game(&seeded_deck, &variant);
 
 		let data = json!({
 			"players": ["Alice", "Bob", "Cathy"],
-			"deck": deck,
+			"deck": seeded_deck,
 			"actions": actions,
 			"notes": notes,
 			"options": { "variant": variant.name }

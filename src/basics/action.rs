@@ -143,8 +143,8 @@ impl Action {
 			Action::Discard(DiscardAction { player_index, suit_index, rank, failed, order }) => {
 				format!("{} {} {} ({})", state.player_names[*player_index], if *failed { "bombs" } else { "discards" }, log_id(suit_index, rank), order)
 			}
-			Action::Draw(DrawAction { player_index, suit_index, rank, .. }) => {
-				format!("{} draws {}", state.player_names[*player_index], log_id(suit_index, rank))
+			Action::Draw(DrawAction { player_index, suit_index, rank, order, .. }) => {
+				format!("{} draws {} ({})", state.player_names[*player_index], log_id(suit_index, rank), order)
 			}
 			Action::Turn(TurnAction { num, current_player_index }) => {
 				format!("Turn {} ({})", num, state.player_names[*current_player_index as usize])

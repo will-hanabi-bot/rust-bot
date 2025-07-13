@@ -35,8 +35,8 @@ static NAMES: [&str; 5] = ["Alice", "Bob", "Cathy", "Donald", "Emily"];
 pub struct TestOptions<'a> {
 	pub min_level: u8,
 	pub max_level: u8,
-	pub play_stacks: Option<Vec<usize>>,
-	pub discarded: Vec<&'a str>,
+	pub play_stacks: Option<&'a[usize]>,
+	pub discarded: &'a[&'a str],
 	pub strikes: u8,
 	pub clue_tokens: usize,
 	pub starting: Player,
@@ -50,7 +50,7 @@ impl<'a> Default for TestOptions<'a> {
 			min_level: 1,
 			max_level: 100,
 			play_stacks: None,
-			discarded: Vec::new(),
+			discarded: &[],
 			strikes: 0,
 			clue_tokens: 8,
 			starting: Player::Alice,
@@ -78,7 +78,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 			if stacks.len() != state.variant.suits.len() {
 				panic!("Invalid play stacks length");
 			}
-			state.play_stacks = stacks.clone();
+			state.play_stacks = stacks.to_vec();
 		}
 	}
 
@@ -116,7 +116,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 
     let Game { players, state, .. } = &mut game;
 
-	for short in &test_options.discarded {
+	for short in test_options.discarded {
 		let id = state.expand_short(short);
 		let Identity { suit_index, rank } = id;
 		state.discard_stacks[suit_index][rank - 1] += 1;
@@ -133,6 +133,8 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 			panic!("Found {count} copies of {}!", state.log_id(&id));
 		}
 	}
+
+	state.cards_left -= state.play_stacks.iter().sum::<usize>() + test_options.discarded.len();
 
 	state.current_player_index = test_options.starting as usize;
 	state.clue_tokens = test_options.clue_tokens;

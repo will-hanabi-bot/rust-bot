@@ -53,7 +53,7 @@ pub struct Player {
 
 	pub waiting: Vec<WaitingConnection>,
 
-	certain_map: HashMap<Identity, Vec<MatchEntry>>,
+	certain_map: HashMap<Identity, HashMap<usize, Vec<usize>>>,
 	infer_map: HashMap<Identity, Vec<MatchEntry>>,
 	id_map: HashMap<Identity, Vec<IdEntry>>,
 	cross_elim_candidates: Vec<IdEntry>,
@@ -222,7 +222,7 @@ impl Player {
 			);
 
 			if unsafe_linked {
-				warn!("{} is unsafe linked {:?}", order, self.links);
+				// warn!("{} is unsafe linked {:?}", order, self.links);
 				return None;
 			}
 
@@ -290,7 +290,7 @@ impl Player {
 		card_count(&state.variant, id) - state.base_count(id) - visible_count
 	}
 
-	fn linked_orders(&self, state: &State) -> HashSet<usize> {
+	pub fn linked_orders(&self, state: &State) -> HashSet<usize> {
 		let mut orders = HashSet::new();
 		for link in &self.links {
 			match link {

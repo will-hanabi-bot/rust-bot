@@ -79,9 +79,9 @@ impl Reactor {
 		let value: f32 = good_touch
 			+ (playables.len() as f32 - 2.0*duped_playables as f32)
 			+ 0.2 * untouched_plays as f32
-			+ 0.1 * revealed_trash as f32
-			+ 0.1 * fill.len() as f32
-			+ 0.05 * elim.len() as f32
+			+ if state.in_endgame() { 0.01 } else { 0.1 } * revealed_trash as f32
+			+ if state.in_endgame() { 0.2 } else { 0.1 } * fill.len() as f32
+			+ if state.in_endgame() { 0.1 } else { 0.05 } * elim.len() as f32
 			+ 0.1 * bad_touch.len() as f32;
 
 		value
@@ -94,7 +94,7 @@ impl Reactor {
 		}
 	}
 
-	fn best_value(game: &Game, offset: usize, value: f32) -> f32 {
+	fn best_value(prev: &Game, game: &Game, offset: usize, value: f32) -> f32 {
 		let Game { state, common, .. } = game;
 		let frame = game.frame();
 		let player_index = (state.our_player_index + offset) % state.num_players;
@@ -109,17 +109,18 @@ impl Reactor {
 			} else { 0.1 });
 
 		let sieving_trash = || {
-			if state.in_endgame() || state.max_score() - state.score() < state.variant.suits.len() {
+			if state.in_endgame() || state.max_score() - state.score() < state.variant.suits.len() || prev.players[player_index].thinks_loaded(&prev.frame(), player_index) {
 				return false;
 			}
 
 			let chop = state.hands[player_index][0];
 			let id = state.deck[chop].id().unwrap();
 
-			state.is_basic_trash(id) || game.me().is_sieved(&frame, id, chop)
+			// Trash or same-hand dupe
+			state.is_basic_trash(id) || state.hands[player_index].iter().any(|&o| o != chop && state.deck[o].is(id))
 		};
 
-		let mut playables = common.thinks_playables(&frame, player_index);
+		let mut playables = game.players[player_index].thinks_playables(&frame, player_index);
 		if !playables.is_empty() {
 			// Only consider playing the leftmost of similarly-possible cards
 			let playables_clone = playables.clone();
@@ -147,12 +148,12 @@ impl Reactor {
 				let new_value = value + mult(diff);
 
 				info!("{} playing {} {}{}", state.player_names[player_index], state.log_oid(&id), mult(diff), if sieving_trash() { ", sieving trash!" } else { "" });
-				Reactor::best_value(&Reactor::advance_game(game, &action), offset + 1, new_value)
+				Reactor::best_value(prev, &Reactor::advance_game(game, &action), offset + 1, new_value)
 			});
 			return play_actions.fold(f32::MIN, |a, b| a.max(b));
 		}
 
-		if common.thinks_locked(&frame, player_index) || (offset == 1 && state.clue_tokens == 8) {
+		if game.players[player_index].thinks_locked(&frame, player_index) || (offset == 1 && state.clue_tokens == 8) {
 			if state.clue_tokens == 0 {
 				warn!("forcing discard at 0 clues from locked hand!");
 				return -15.0;
@@ -165,10 +166,10 @@ impl Reactor {
 			let new_value = value + mult(diff);
 
 			info!("{} forced clue {}", state.player_names[player_index], mult(diff));
-			return Reactor::best_value(&next_game, offset + 1, new_value);
+			return Reactor::best_value(prev, &next_game, offset + 1, new_value);
 		}
 
-		let trash = common.thinks_trash(&frame, player_index);
+		let trash = game.players[player_index].thinks_trash(&frame, player_index);
 		let discard = trash.first().unwrap_or(&state.hands[player_index][0]);
 		let (id_str, action, dc_value) = match state.deck[*discard].id() {
 			None => {
@@ -190,7 +191,7 @@ impl Reactor {
 		let new_value = value + mult(diff);
 
 		info!("{} discarding {} {}{}", state.player_names[player_index], id_str, mult(diff), if *discard != state.hands[player_index][0] && sieving_trash() { ", sieving trash!" } else { "" });
-		Reactor::best_value(&Reactor::advance_game(game, &action), offset + 1, new_value)
+		Reactor::best_value(prev, &Reactor::advance_game(game, &action), offset + 1, new_value)
 	}
 
 	fn predict_value(game: &Game, action: &Action) -> f32 {
@@ -212,7 +213,7 @@ impl Reactor {
 				Reactor::get_result(game, &hypo_game, clue) * mult - 0.25
 			},
 			Action::Discard(DiscardAction { player_index, order, .. }) => {
-				let mult = if state.in_endgame() { 0.2 } else { 1.0 };
+				let mult = if state.in_endgame() { 0.1 } else { 1.0 };
 
 				mult * if common.thinks_trash(&game.frame(), *player_index).contains(order) { 1.2 } else { 0.5 }
 			},
@@ -235,7 +236,7 @@ impl Reactor {
 		};
 		info!("starting value {}", value);
 
-		let best = Reactor::best_value(&hypo_game, 1, value);
+		let best = Reactor::best_value(game, &hypo_game, 1, value);
 		info!("{}: {} ({:?})", action.fmt(state), best, hypo_game.last_move.unwrap());
 		best
 	}
@@ -288,7 +289,7 @@ impl Convention for Reactor {
 			}
 		};
 
-		game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(interp)));
+		game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(interp.unwrap_or(ClueInterp::None))));
 
 		let frame = Frame::new(&game.state, &game.meta);
 		game.common.good_touch_elim(&frame);
@@ -424,7 +425,7 @@ impl Convention for Reactor {
 			}
 		}
 
-		if state.in_endgame() && state.max_score() - state.score() < 2*state.variant.suits.len() {
+		if state.in_endgame() && state.max_score() - state.score() <= state.variant.suits.len() + 1{
 			info!("{}", "trying to solve endgame...".purple());
 
 			let mut solver = EndgameSolver::new();

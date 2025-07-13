@@ -15,7 +15,7 @@ type Frac = fraction::Fraction;
 #[derive(Debug, Clone)]
 pub enum SimpleResult {
 	AlwaysWinnable,
-	WinnableWithDraws(Vec<Option<Identity>>),
+	WinnableWithDraws(Vec<Identity>),
 	Unwinnable
 }
 
@@ -39,11 +39,6 @@ impl EndgameSolver {
 
 	pub(super) fn unwinnable_state(state: &State, player_turn: usize) -> bool {
 		if state.ended() || state.pace() < 0 {
-			if state.ended() {
-				// println!("game ended");
-			} else {
-				// println!("neg pace");
-			}
 			return true;
 		}
 
@@ -213,10 +208,8 @@ impl EndgameSolver {
 	}
 
 	pub(super) fn winnable_if(&mut self, state: &State, player_turn: usize, action: &PerformAction, remaining: &RemainingMap, depth: usize, deadline: &Instant) -> SimpleResult {
-		let hash = format!("{},{},{:?},{:?}", state.hash(), player_turn, action, remaining.iter().sorted_by_key(|(k, _)| match k {
-			None => 100,
-			Some(id) => id.suit_index * 10 + id.rank
-		}));
+		let hash = format!("{},{},{:?},{:?}", state.hash(), player_turn, action, remaining.iter().sorted_by_key(|(id, _)| id.suit_index * 10 + id.rank));
+
 		if self.if_cache.contains_key(&hash) {
 			return self.if_cache[&hash].clone();
 		}
@@ -238,7 +231,7 @@ impl EndgameSolver {
 		let mut winnable_draws = Vec::new();
 
 		for id in remaining.keys() {
-			let draw = Card::new(*id, state.card_order + 1, state.turn_count);
+			let draw = Card::new(Some(*id), state.card_order + 1, state.turn_count);
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, Some(draw));
 			let new_remaining = remove_remaining(remaining, id);
 

@@ -16,7 +16,7 @@ fn it_doesnt_elim_when_giver_holds_dupes() {
 		&["r3", "y5", "r1", "r2"],
 		&["g3", "p1", "b3", "b5"],
 	], TestOptions {
-		play_stacks: Some(vec![0, 2, 0, 2, 0]),
+		play_stacks: Some(&[0, 2, 0, 2, 0]),
 		..TestOptions::default()
 	});
 

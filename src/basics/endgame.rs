@@ -8,18 +8,19 @@ use log::info;
 use crate::basics::action::{Action, PerformAction};
 use crate::basics::card::{Card, IdOptions, Identifiable, Identity, MatchOptions};
 use crate::basics::game::Game;
+use crate::basics::player::Link;
 use crate::basics::util;
-use crate::basics::variant::card_count;
+use crate::basics::variant::{all_ids, card_count};
 use winnable::SimpleResult;
 
 type Frac = fraction::Fraction;
-type RemainingMap = HashMap<Option<Identity>,RemainingEntry>;
+type RemainingMap = HashMap<Identity,RemainingEntry>;
 mod winnable;
 
 type WinnableResult = Result<(Vec<PerformAction>, Frac), String>;
 const UNWINNABLE: WinnableResult = Err(String::new());
 
-pub fn remove_remaining(remaining: &RemainingMap, id: &Option<Identity>) -> RemainingMap {
+pub fn remove_remaining(remaining: &RemainingMap, id: &Identity) -> RemainingMap {
 	let RemainingEntry { missing, .. } = &remaining[id];
 	let mut new_remaining = remaining.clone();
 
@@ -36,7 +37,7 @@ struct GameArr {
 	game: Game,
 	prob: Frac,
 	remaining: RemainingMap,
-	drew: Option<Option<Identity>>,
+	drew: Option<Identity>,
 }
 
 #[derive(Default)]
@@ -53,10 +54,11 @@ impl EndgameSolver {
 
 	pub fn solve_game(&mut self, game: &Game, player_turn: usize) -> Result<(PerformAction, Frac), String> {
 		let deadline = Instant::now() + Duration::from_secs(5);
-		let mut remaining_ids = find_remaining_ids(game);
+		let remaining_ids = find_remaining_ids(game);
 
-		if remaining_ids.values().filter(|v| v.all).count() > 2 {
-			return Err(format!("couldn't find any {}!", remaining_ids.keys().map(|i| game.state.log_id(&i.unwrap())).join(",")));
+		if remaining_ids.iter().filter(|(id, v)| !game.state.is_basic_trash(id) && v.all).count() > 2 {
+			return Err(format!("couldn't find any {}!", remaining_ids.keys().filter_map(|i|
+				(!game.state.is_basic_trash(i)).then_some(game.state.log_id(i))).join(",")));
 		}
 
 		let level = log::max_level();
@@ -64,11 +66,16 @@ impl EndgameSolver {
 
 		let mut state = game.state.clone();
 		let mut unknown_own = Vec::new();
+		let linked_orders = game.me().linked_orders(&state);
 
 		for &order in game.state.our_hand() {
 			match game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
 				Some(id) =>
-					state.deck[order].base = Some(Identity { suit_index: id.suit_index, rank: id.rank }),
+					if linked_orders.contains(&order) || (state.is_basic_trash(id) && game.me().thoughts[order].id().is_none())  {
+						unknown_own.push(order);
+					} else {
+						state.deck[order].base = Some(Identity { suit_index: id.suit_index, rank: id.rank });
+					},
 				None =>
 					unknown_own.push(order)
 			}
@@ -94,15 +101,10 @@ impl EndgameSolver {
 			}
 		}
 
-		let undrawn_trash = total_unknown - remaining_ids.values().map(|e| e.missing).sum::<usize>();
-		if undrawn_trash > 0 {
-			remaining_ids.insert(None, RemainingEntry { missing: undrawn_trash, all: false });
-		}
-
 		info!("remaining ids: {:?}", remaining_ids);
 
 		struct Arrangement {
-			ids: Vec<Option<Identity>>,
+			ids: Vec<Identity>,
 			prob: Frac,
 			remaining: RemainingMap
 		}
@@ -116,10 +118,21 @@ impl EndgameSolver {
 				let thought = &game.me().thoughts[order];
 
 				// Check if this id cannot be assigned to this order
-				let impossible = match id {
-					Some(id) => !thought.possibilities().contains(id),
-					None => !thought.possibilities().iter().any(|i| state.is_basic_trash(i))
-				};
+				let impossible = state.deck[order].id().map(|i| i != id).unwrap_or(false) ||
+					if !state.is_basic_trash(id) {
+						!thought.possibilities().contains(id)
+					}
+					else {
+						!thought.possibilities().is_empty() && !thought.possibilities().iter().any(|i| state.is_basic_trash(i)) &&
+						// We cannot assign a trash id if it is linked and all other orders are already trash
+						(!linked_orders.contains(&order) || game.me().links.iter().all(|l| {
+							match l {
+								Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => {
+									!orders.contains(&order) || orders.iter().all(|&o| o == order || (0..ids.len()).any(|i| o == unknown_own[i] && state.is_basic_trash(&ids[i])))
+								}
+							}
+						}))
+					};
 
 				if impossible {
 					return None;
@@ -157,7 +170,7 @@ impl EndgameSolver {
 
 				for i in 0..ids.len() {
 					let order = unknown_own[i];
-					new_deck[order].base = ids[i];
+					new_deck[order].base = Some(ids[i]);
 				}
 
 				let mut hypo_game = game.clone();
@@ -228,12 +241,7 @@ impl EndgameSolver {
 				Ok(action)
 			},
 			Err(_) => {
-				let bottom_decked = !remaining.is_empty() && remaining.keys().all(|id|
-					match id {
-						Some(id) => state.is_critical(id) && id.rank != 5,
-						None => false
-					}
-				);
+				let bottom_decked = !remaining.is_empty() && remaining.keys().all(|id| state.is_critical(id) && id.rank != 5);
 
 				if EndgameSolver::unwinnable_state(state, player_turn) || bottom_decked {
 					// info!("unwinnable");
@@ -261,7 +269,7 @@ impl EndgameSolver {
 		}
 	}
 
-	fn possible_actions(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap, deadline: &Instant) -> Vec<(PerformAction, Vec<Option<Identity>>)> {
+	fn possible_actions(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap, deadline: &Instant) -> Vec<(PerformAction, Vec<Identity>)> {
 		let Game { common, state, .. } = game;
 		let mut actions = Vec::new();
 
@@ -306,7 +314,7 @@ impl EndgameSolver {
 
 		if clue_winnable {
 			// If everyone knows exactly where all the remaining useful cards are, clues are only useful for stalling, so we only need to consider 1 clue
-			let fully_known = (remaining.is_empty() || (remaining.len() == 1 && remaining.iter().next().unwrap().0.is_none())) &&
+			let fully_known = (remaining.is_empty() || (remaining.len() == 1 && state.is_basic_trash(remaining.iter().next().unwrap().0))) &&
 				state.hands.concat().iter().all(|&o| {
 					match state.deck[o].id() {
 						None => true,
@@ -348,7 +356,7 @@ impl EndgameSolver {
 		game.simulate_action(&util::perform_to_action(state, action, player_turn, None))
 	}
 
-	fn optimize(&mut self, hypo_games: (Vec<GameArr>, Vec<GameArr>), actions: Vec<(PerformAction, Vec<Option<Identity>>)>, player_turn: usize, depth: usize, deadline: &Instant) -> WinnableResult {
+	fn optimize(&mut self, hypo_games: (Vec<GameArr>, Vec<GameArr>), actions: Vec<(PerformAction, Vec<Identity>)>, player_turn: usize, depth: usize, deadline: &Instant) -> WinnableResult {
 		let (undrawn, drawn) = hypo_games;
 		let next_player_index = undrawn[0].game.state.next_player_index(player_turn);
 		let mut best_winrate = Frac::ZERO;
@@ -389,7 +397,7 @@ impl EndgameSolver {
 				else {
 					info!("{}drawing {} after {} {} cards_left {} endgame_turns {:?} {{",
 						(0..depth).map(|_| "  ").join(""),
-						drew.and_then(|d| d.map(|id| game.state.log_id(&id))).unwrap_or("xx".to_owned()),
+						new_game.state.log_oid(&drew.as_ref()),
 						perform.fmt_s(&game.state, player_turn),
 						new_game.state.hands[player_turn].iter().map(|&o| new_game.state.log_iden(&new_game.state.deck[o])).join(","),
 						new_game.state.cards_left,
@@ -405,6 +413,11 @@ impl EndgameSolver {
 					},
 					Ok((performs, winrate)) => {
 						action_winrate += prob * winrate;
+
+						if action_winrate > Frac::ONE {
+							println!("{}", hypo_games.iter().map(|h| h.prob).join(","));
+							panic!("Winrate exceeds 100% {} {}", prob, winrate);
+						}
 
 						format!("{}}} {} prob {} winrate {}",
 							(0..depth).map(|_| "  ").join(""),
@@ -459,7 +472,7 @@ impl EndgameSolver {
 		for (id, RemainingEntry { missing, .. }) in remaining {
 			let mut new_game = game.clone();
 			assert_eq!(new_game.state.deck.len(), state.card_order);
-			new_game.state.deck.push(Card::new(*id, state.card_order + 1, state.turn_count));
+			new_game.state.deck.push(Card::new(Some(*id), state.card_order + 1, state.turn_count));
 
 			let new_remaining = remove_remaining(remaining, id);
 			drawn.push(GameArr { game: new_game, prob: Frac::new(*missing as u64, state.cards_left as u64), remaining: new_remaining, drew: Some(*id) });
@@ -482,30 +495,24 @@ pub struct RemainingEntry {
 fn find_remaining_ids(game: &Game) -> RemainingMap {
 	let Game { state, .. } = game;
 	let mut seen_ids = HashMap::new();
+	let linked_orders = game.me().linked_orders(state);
 
 	for &order in &state.hands.concat() {
 		if let Some(id) = game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
-			seen_ids.entry(id).and_modify(|e| *e += 1).or_insert(1);
+			if !(linked_orders.contains(&order) || (state.is_basic_trash(id) && game.me().thoughts[order].id().is_none()))  {
+				seen_ids.entry(id).and_modify(|e| *e += 1).or_insert(1);
+			}
 		}
 	}
 
 	let mut remaining_ids = HashMap::new();
 
-	for suit_index in 0..state.variant.suits.len() {
-		let stack = state.play_stacks[suit_index];
+	for id in all_ids(&state.variant) {
+		let total = card_count(&state.variant, &id);
+		let missing = std::cmp::max(0, total - state.base_count(&id) - seen_ids.get(&id).unwrap_or(&0));
 
-		if stack == state.max_ranks[suit_index] {
-			continue;
-		}
-
-		for rank in (stack + 1)..=state.max_ranks[suit_index] {
-			let id = Identity { suit_index, rank };
-			let total = card_count(&state.variant, &id);
-			let missing = std::cmp::max(0, total - state.base_count(&id) - seen_ids.get(&id).unwrap_or(&0));
-
-			if missing > 0 {
-				remaining_ids.insert(Some(id), RemainingEntry { missing, all: missing == total });
-			}
+		if missing > 0 {
+			remaining_ids.insert(id, RemainingEntry { missing, all: missing == total });
 		}
 	}
 

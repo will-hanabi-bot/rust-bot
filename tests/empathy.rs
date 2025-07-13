@@ -38,7 +38,7 @@ fn it_visibly_elims_5s() {
 		&["r3", "b2", "r1", "y5"],
 	], TestOptions {
 		starting: Player::Donald,
-		play_stacks: Some(vec![5, 0, 0, 0, 0, 0]),
+		play_stacks: Some(&[5, 0, 0, 0, 0, 0]),
 		variant: "6 Suits",
 		..TestOptions::default() });
 
@@ -63,8 +63,8 @@ fn it_visibly_elims_mixed_cards() {
 		&["y5", "p1", "b3", "b5", "g3"],
 	], TestOptions {
 		starting: Player::Donald,
-		play_stacks: Some(vec![3, 0, 0, 0, 0]),
-		discarded: vec!["r1", "r1", "r2", "r3"],
+		play_stacks: Some(&[3, 0, 0, 0, 0]),
+		discarded: &["r1", "r1", "r2", "r3"],
 		init: Box::new(|game: &mut Game| {
 			// Alice's slot 5 is clued red.
 			pre_clue(game, Player::Alice, 5, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Cathy }]);

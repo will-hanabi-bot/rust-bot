@@ -21,10 +21,10 @@ pub fn elim_result(prev: &Game, game: &Game, hand: &[usize], list: &[usize]) -> 
 		let card = &game.state.deck[order];
 
 		if card.clued && game.meta[order].status != CardStatus::CalledToDiscard && thought.possible.len() < prev_thought.possible.len() {
-			if card.newly_clued && !prev.frame().is_blind_playing(order) {
+			if card.newly_clued && !prev.frame().is_blind_playing(order) && !game.common.order_kt(&game.frame(), order) {
 				new_touched.push(order);
 			}
-			else if list.contains(&order) && game.state.has_consistent_inferences(thought) {
+			else if list.contains(&order) && game.state.has_consistent_inferences(thought) && game.meta[order].status != CardStatus::CalledToPlay {
 				fill.push(order);
 			}
 			else if game.state.has_consistent_inferences(thought) {
@@ -84,6 +84,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 
 		if player.order_kt(&game.frame(), order) {
 			trash.push(order);
+			continue;
 		}
 
 		if let Some(id) = card.id() {
@@ -123,13 +124,11 @@ pub struct PlayablesResult {
 }
 
 pub fn playables_result(prev: &Game, game: &Game) -> PlayablesResult {
-	let Game { common, .. } = game;
-
 	let mut blind_plays = Vec::new();
 	let mut playables = Vec::new();
 
-	for &order in &common.hypo_plays {
-		if prev.common.hypo_plays.contains(&order) {
+	for &order in &game.me().hypo_plays {
+		if prev.me().hypo_plays.contains(&order) {
 			continue;
 		}
 

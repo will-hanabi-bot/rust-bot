@@ -6,33 +6,35 @@ use crate::basics::clue::ClueKind;
 use crate::basics::game::frame::Frame;
 use crate::basics::game::Game;
 use crate::basics::player::WaitingConnection;
+use crate::basics::util::players_between;
 use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
 use crate::basics::action::{ClueAction};
+use itertools::Itertools;
 
 impl Reactor {
-	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
+	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
 		info!("interpreting clue when both players are loaded!");
 		let ClueAction { giver, target, .. } = &action;
 		let Game { state, .. } = game;
 
 		if state.next_player_index(*giver) != *target {
 			info!("target is not the next player!");
-			return ClueInterp::None;
+			return None;
 		}
 
 		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
 		let prev_playables = prev.players[*target].thinks_playables(&prev.frame(), *target);
 		if clued_resets.iter().chain(duplicate_reveals.iter()).any(|o| prev_playables.contains(o)) {
 			info!("fix clue!");
-			return ClueInterp::Reveal;
+			return Some(ClueInterp::Reveal);
 		}
 		info!("not an urgent fix clue, not interpreting");
-		ClueInterp::None
+		None
 	}
 
-	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
+	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
 		info!("interpreting stable clue!");
 		let ClueAction { target, list, clue, .. } = &action;
 		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
@@ -69,7 +71,7 @@ impl Reactor {
 
 		if !clued_resets.is_empty() || !duplicate_reveals.is_empty() {
 			info!("fix clue!");
-			return ClueInterp::Reveal;
+			return Some(ClueInterp::Reveal);
 		}
 
 		let Game { common: prev_common, .. } = prev;
@@ -78,12 +80,12 @@ impl Reactor {
 
 		if !state.in_endgame() && !prev_common.thinks_playables(&prev.frame(), *target).is_empty() {
 			warn!("target was already loaded with a playable!");
-			return ClueInterp::None;
+			return None;
 		}
 
 		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 		if newly_touched.is_empty() {
-			return ClueInterp::Reveal;
+			return Some(ClueInterp::Reveal);
 		}
 
 		let trash_push = common.order_kt(&frame, *newly_touched.iter().max().unwrap());
@@ -111,7 +113,7 @@ impl Reactor {
 
 		if reveal {
 			info!("revealed a safe action!");
-			return ClueInterp::Reveal;
+			return Some(ClueInterp::Reveal);
 		}
 
 		if clue.kind == ClueKind::COLOUR {
@@ -124,7 +126,7 @@ impl Reactor {
 		}
 	}
 
-	pub(super) fn interpret_reactive(prev: &Game, game: &mut Game, action: &ClueAction, reacter: usize) -> ClueInterp {
+	pub(super) fn interpret_reactive(prev: &Game, game: &mut Game, action: &ClueAction, reacter: usize) -> Option<ClueInterp> {
 		let Game { common: prev_common, .. } = prev;
 		let Game { common, state, meta, .. } = game;
 		let ClueAction { giver, target: receiver, list, clue } = action;
@@ -152,7 +154,7 @@ impl Reactor {
 				clue: *clue,
 				focus_slot
 			});
-			return ClueInterp::Reactive;
+			return Some(ClueInterp::Reactive);
 		}
 
 		match clue.kind {
@@ -173,7 +175,7 @@ impl Reactor {
 						match all_trash.iter().find(|&(_, o)| state.deck[**o].clued).or_else(|| all_trash.first()) {
 							None => {
 								warn!("Reactive clue but receiver had no playable or trash targets!");
-								ClueInterp::None
+								None
 							}
 							Some((index, target)) => {
 								let target_slot = index + 1;
@@ -186,12 +188,12 @@ impl Reactor {
 								let react_order = state.hands[reacter][react_slot - 1];
 								let receive_order = **target;
 
-								Reactor::target_play(game, action, react_order, true);
+								Reactor::target_play(game, action, react_order, true)?;
 								Reactor::target_discard(game, action, receive_order, true);
 								game.meta[receive_order].depends_on = Some(vec![react_order]);
 
 								info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-								ClueInterp::Reactive
+								Some(ClueInterp::Reactive)
 							}
 						}
 					}
@@ -207,11 +209,11 @@ impl Reactor {
 						let receive_order = *target;
 
 						Reactor::target_discard(game, action, react_order, true);
-						Reactor::target_play(game, action, receive_order, false);
+						Reactor::target_play(game, action, receive_order, false)?;
 						game.meta[receive_order].depends_on = Some(vec![react_order]);
 
 						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-						ClueInterp::Reactive
+						Some(ClueInterp::Reactive)
 					}
 				}
 			}
@@ -220,8 +222,36 @@ impl Reactor {
 
 				match state.hands[*receiver].iter().enumerate().filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())).min() {
 					None => {
-						warn!("Reactive clue but receiver had no playable targets!");
-						ClueInterp::None
+						let finesse_targets = state.hands[*receiver].iter().enumerate().filter(|(_, o)|
+							state.playable_away(state.deck[**o].id().unwrap()) == 1
+						).collect::<Vec<_>>();
+
+						if finesse_targets.is_empty() {
+							warn!("Reactive clue but receiver had no playable targets!");
+							return None;
+						}
+
+						let focus_slot = if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 };
+						for react_slot in [1, 5, 4, 3, 2] {
+							let mut target_slot = (focus_slot + 5 - react_slot) % 5;
+							if target_slot == 0 {
+								target_slot = 5;
+							}
+
+							if let Some((_,finesse_target)) = finesse_targets.iter().find(|(i, _)| i + 1 == target_slot) {
+								let react_order = state.hands[reacter][react_slot - 1];
+								let receive_order = **finesse_target;
+
+								Reactor::target_play(game, action, react_order, true)?;
+								game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
+								Reactor::target_play(game, action, receive_order, false)?;
+								game.meta[receive_order].depends_on = Some(vec![react_order]);
+
+								info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
+								return Some(ClueInterp::Reactive);
+							}
+						}
+						panic!("Unreachable finesse");
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
@@ -234,20 +264,20 @@ impl Reactor {
 						let react_order = state.hands[reacter][react_slot - 1];
 						let receive_order = *target;
 
-						Reactor::target_play(game, action, react_order, true);
+						Reactor::target_play(game, action, react_order, true)?;
 						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
-						Reactor::target_play(game, action, receive_order, false);
+						Reactor::target_play(game, action, receive_order, false)?;
 						game.meta[receive_order].depends_on = Some(vec![react_order]);
 
 						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-						ClueInterp::Reactive
+						Some(ClueInterp::Reactive)
 					}
 				}
 			}
 		}
 	}
 
-	fn ref_play(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
+	fn ref_play(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
 		let Game { common, state, .. } = game;
 		let ClueAction { target: receiver, list, .. } = &action;
 		let hand = &state.hands[*receiver];
@@ -257,29 +287,74 @@ impl Reactor {
 
 		if game.frame().is_blind_playing(target) {
 			warn!("targeting an already known playable!");
-			return ClueInterp::None;
+			return None;
 		}
 
 		if game.meta[target].status == CardStatus::CalledToDiscard {
 			warn!("targeting a card called to discard!");
-			return ClueInterp::None;
+			return None;
 		}
 
-		Reactor::target_play(game, action, target, false);
-		ClueInterp::RefPlay
+		Reactor::target_play(game, action, target, false)?;
+		Some(ClueInterp::RefPlay)
 	}
 
-	fn target_play(game: &mut Game, action: &ClueAction, target: usize, urgent: bool) {
-		let ClueAction { giver, .. } = action;
+	fn target_play(game: &mut Game, action: &ClueAction, target: usize, urgent: bool) -> Option<()> {
+		let ClueAction { giver, target: clue_target, .. } = action;
+
+		// Include possible delayed plays
+		let possible_conns = players_between(game.state.num_players, *giver, *clue_target).iter().flat_map(|&i| {
+			let mut playables = game.common.thinks_playables(&game.frame(), i);
+
+			// If they have an urgent discard, they can't play a connecting card
+			if game.state.hands[i].iter().any(|&o| game.meta[o].urgent && game.meta[o].trash) {
+				return Vec::new();
+			}
+
+			// If this player has an urgent playable, they can only play that card
+			if playables.iter().any(|&o| game.meta[o].urgent) {
+				playables.retain(|&o| game.meta[o].urgent);
+			}
+
+			// Only consider playing the leftmost of similarly-possible cards
+			let playables_clone = playables.clone();
+			playables.retain(|&o| {
+				!playables_clone.iter().any(|&p| p > o && game.common.thoughts[p].possible == game.common.thoughts[o].possible)
+			});
+
+			playables.iter().flat_map(|&o|
+				if let Some(id) = game.state.deck[o].id() {
+					vec![(o, *id)]
+				}
+				else {
+					game.common.thoughts[o].inferred.iter().map(|i| (o, Identity { suit_index: i.suit_index, rank: i.rank + 1 })).collect::<Vec<_>>()
+				}
+			).collect::<Vec<_>>()
+		}).collect::<Vec<_>>();
+
+		// If we know which card is connecting, Update the connecting card to be urgent
+		if let Some(id) = game.state.deck[target].id() {
+			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(id)) {
+				let conn_id = Identity { suit_index: id.suit_index, rank: id.rank - 1 };
+				game.common.thoughts[*conn_order].inferred.retain(|i| *i == conn_id);
+				game.meta[*conn_order].urgent = true;
+				game.meta[*conn_order].status = CardStatus::CalledToPlay;
+				info!("updating connecting {} as {} to be urgent", conn_order, game.state.log_id(&conn_id))
+			}
+		}
 
 		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
-		inferred.retain(|i| game.state.is_playable(i) && !game.players[*giver].is_trash(&game.frame(), i, target));
+
+		inferred.retain(|i| game.state.is_playable(i) || possible_conns.iter().any(|p| p.1 == *i));
+
 		let reset = inferred.is_empty();
 		game.common.thoughts[target].inferred = inferred.clone();
 		game.common.thoughts[target].info_lock = Some(inferred);
 
 		if reset {
 			game.common.thoughts[target].reset_inferences();
+			warn!("target {} was reset!", target);
+			return None;
 		}
 
 		let Game { common, state, .. } = game;
@@ -292,6 +367,7 @@ impl Reactor {
 		}
 
 		info!("targeting play {}, infs {}", target, common.str_infs(state, target));
+		Some(())
 	}
 
 	fn target_discard(game: &mut Game, _action: &ClueAction, target: usize, urgent: bool) {
@@ -311,7 +387,7 @@ impl Reactor {
 		info!("targeting discard {}, infs {}", target, common.str_infs(state, target));
 	}
 
-	fn ref_discard(prev: &Game, game: &mut Game, action: &ClueAction) -> ClueInterp {
+	fn ref_discard(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
 		let Game { state, .. } = game;
 		let ClueAction { target: receiver, list, clue, .. } = &action;
 		let hand = &state.hands[*receiver];
@@ -334,7 +410,7 @@ impl Reactor {
 						meta.status = CardStatus::ChopMoved;
 					}
 				}
-				return ClueInterp::Lock;
+				return Some(ClueInterp::Lock);
 			}
 		}
 
@@ -346,6 +422,6 @@ impl Reactor {
 		let meta = &mut game.meta[hand[target_index]];
 		meta.status = CardStatus::CalledToDiscard;
 		meta.trash = true;
-		ClueInterp::RefDiscard
+		Some(ClueInterp::RefDiscard)
 	}
 }
