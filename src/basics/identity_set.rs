@@ -6,20 +6,6 @@ pub struct IdentitySet(usize);
 impl IdentitySet {
 	pub const EMPTY: Self = IdentitySet(0);
 
-	fn from_id(id: Identity) -> usize {
-		id.suit_index * 5 + (id.rank - 1)
-	}
-
-	fn to_id(ord: usize) -> Identity {
-		if ord < 30 {
-			let suit_index = ord / 5;
-			let rank = (ord % 5) + 1;
-			Identity { suit_index, rank }
-		} else {
-			panic!("Couldn't convert ordinal {} to identity!", ord);
-		}
-	}
-
 	pub fn len(&self) -> usize {
 		self.0.count_ones() as usize
 	}
@@ -30,11 +16,11 @@ impl IdentitySet {
 	}
 
 	pub fn single(id: Identity) -> Self {
-		IdentitySet(1 << Self::from_id(id))
+		IdentitySet(1 << id.to_ord())
 	}
 
 	pub fn insert(&mut self, id: Identity) {
-		self.0 |= 1usize << Self::from_id(id);
+		self.0 |= 1usize << id.to_ord();
 	}
 
 	pub fn extend(&mut self, ids: &[Identity]) {
@@ -44,7 +30,7 @@ impl IdentitySet {
 	}
 
 	pub fn contains(&self, id: Identity) -> bool {
-		let bit = 1usize << Self::from_id(id);
+		let bit = 1usize << id.to_ord();
 		(self.0 & bit) != 0
 	}
 
@@ -68,7 +54,7 @@ impl IdentitySet {
 			let tz = bits.trailing_zeros() as usize;
 			bits &= bits - 1;
 
-			let id = Self::to_id(tz);
+			let id = Identity::from_ord(tz);
 			if !cond(id) {
 				res.0 &= !(1 << tz);
 			}
@@ -83,7 +69,7 @@ impl IdentitySet {
 			let tz = bits.trailing_zeros() as usize;
 			bits &= bits - 1;
 
-			let id = Self::to_id(tz);
+			let id = Identity::from_ord(tz);
 			if !cond(id) {
 				self.0 &= !(1 << tz);
 			}
@@ -123,7 +109,7 @@ impl Iterator for IdentitySetIter {
 		}
 		let tz = self.bits.trailing_zeros();
 		self.bits &= self.bits - 1;
-		Some(IdentitySet::to_id(tz as usize))
+		Some(Identity::from_ord(tz as usize))
 	}
 }
 

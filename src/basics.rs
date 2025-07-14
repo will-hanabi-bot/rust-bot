@@ -6,7 +6,7 @@ use self::clue::{BaseClue, CardClue};
 use self::card::{Card, Identifiable, Identity, Thought};
 use self::game::{Game};
 use self::action::{ClueAction, DiscardAction, DrawAction, PlayAction};
-use self::variant::{card_count, touch_possibilities};
+use self::variant::{touch_possibilities};
 use std::cmp::min;
 
 pub mod action;
@@ -77,7 +77,7 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 		}
 
 		// Discarded all copies of an identity
-		if state.discard_stacks[id.suit_index][id.rank - 1] == card_count(&state.variant, id) {
+		if state.discard_stacks[id.suit_index][id.rank - 1] == state.card_count(id) {
 			state.max_ranks[id.suit_index] = min(state.max_ranks[id.suit_index], id.rank);
 		}
 

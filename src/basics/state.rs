@@ -1,9 +1,10 @@
 use std::sync::LazyLock;
 
+use crate::basics::variant::DARK;
 use super::action::Action;
 use super::clue::{BaseClue, Clue, ClueKind};
 use super::card::{Card, Identifiable, Identity, Thought};
-use super::variant::{card_count, card_touched, colourable_suits, Variant};
+use super::variant::{card_touched, colourable_suits, Variant};
 
 use itertools::Itertools;
 use regex::Regex;
@@ -28,14 +29,27 @@ pub struct State {
 	pub action_list: Vec<Action>,
 	pub current_player_index: usize,
 	pub endgame_turns: Option<usize>,
+	card_count: Vec<usize>,
 }
 
 impl State {
 	pub fn new(player_names: Vec<String>, our_player_index: usize, variant: Variant) -> Self {
 		let num_players = player_names.len();
 		let num_suits = variant.suits.len();
-		let cards_left = (0..num_suits).map(|suit_index| (1..=5).map(|rank|
-			card_count(&variant, Identity { suit_index, rank })).sum::<usize>()).sum();
+
+		let mut card_count = Vec::new();
+		let mut cards_left = 0;
+
+		for suit_index in 0..num_suits {
+			let dark = DARK.is_match(&variant.suits[suit_index]);
+
+			for rank in 1..=5 {
+				let count = if dark { 1 } else { [3, 2, 2, 2, 1][rank - 1] };
+
+				cards_left += count;
+				card_count.push(count);
+			}
+		}
 
 		Self {
 			turn_count: 0,
@@ -49,6 +63,7 @@ impl State {
 			our_player_index,
 			card_order: 0,
 			cards_left,
+			card_count,
 			play_stacks: vec![0; num_suits],
 			discard_stacks: vec![vec![0; 5]; num_suits],
 			max_ranks: vec![5; num_suits],
@@ -115,7 +130,7 @@ impl State {
 	}
 
 	pub fn is_critical(&self, id: Identity) -> bool {
-		!self.is_basic_trash(id) && self.discard_stacks[id.suit_index][id.rank - 1] == (card_count(&self.variant, id) - 1)
+		!self.is_basic_trash(id) && self.discard_stacks[id.suit_index][id.rank - 1] == (self.card_count(id) - 1)
 	}
 
 	pub fn our_hand(&self) -> &Vec<usize> {
@@ -170,7 +185,11 @@ impl State {
 	}
 
 	pub fn remaining_multiplicity(&self, ids: impl Iterator<Item = Identity>) -> usize {
-		ids.map(|id| card_count(&self.variant, id) - self.base_count(id)).sum()
+		ids.map(|id| self.card_count(id) - self.base_count(id)).sum()
+	}
+
+	pub fn card_count(&self, id: Identity) -> usize {
+		self.card_count[id.to_ord()]
 	}
 
 	pub fn holder_of(&self, order: usize) -> Option<usize> {

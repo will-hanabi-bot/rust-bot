@@ -54,6 +54,22 @@ pub struct Identity {
 	pub rank: usize
 }
 
+impl Identity {
+	pub fn to_ord(&self) -> usize {
+		self.suit_index * 5 + (self.rank - 1)
+	}
+
+	pub fn from_ord(ord: usize) -> Self {
+		if ord < 30 {
+			let suit_index = ord / 5;
+			let rank = (ord % 5) + 1;
+			Self { suit_index, rank }
+		} else {
+			panic!("Couldn't convert ordinal {} to identity!", ord);
+		}
+	}
+}
+
 impl Identifiable for Identity {
 	fn identity(&self, _options: &IdOptions) -> Option<Identity> {
 		Some(*self)

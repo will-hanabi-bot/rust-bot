@@ -1,6 +1,6 @@
 use crate::basics::game::frame::Frame;
 use crate::basics::identity_set::IdentitySet;
-use crate::basics::variant::{all_ids, card_count};
+use crate::basics::variant::{all_ids};
 use crate::basics::card::{IdOptions, Identifiable, Identity, Thought};
 use crate::basics::state::State;
 use super::{IdEntry, GTEntry, Player, Link};
@@ -66,7 +66,7 @@ impl Player {
 		for id in ids.iter() {
 			let known_count = state.base_count(id) + self.certain_map.get(&id).map(|e| e.len()).unwrap_or(0);
 
-			if known_count == card_count(&state.variant, id) {
+			if known_count == state.card_count(id) {
 				eliminated.insert(id);
 				let (inner_changed, inner_recursive_ids) = self.update_map(id, Vec::new());
 				changed = changed || inner_changed;
@@ -121,7 +121,7 @@ impl Player {
 		self.basic_card_elim(state, ids) || changed
 	}
 
-	fn cross_card_elim(&mut self, state: &State, contained: &Vec<IdEntry>, acc_ids: &IdentitySet, certains: &HashSet<usize>, next_index: usize) -> bool {
+	fn cross_card_elim(&mut self, state: &State, contained: &Vec<IdEntry>, acc_ids: &IdentitySet, certains: &Vec<usize>, next_index: usize) -> bool {
 		if self.cross_elim_candidates.len() == 1 {
 			return false;
 		}
@@ -151,10 +151,21 @@ impl Player {
 		let mut next_contained = contained.clone();
 		next_contained.push(item.clone());
 
-		let new_certains: HashSet<usize> = self.thoughts[item.order].possible.difference(acc_ids).iter().flat_map(|id|
-			self.certain_map.get(&id).map(|c| c.keys().copied().collect::<Vec<usize>>()).unwrap_or_default()).collect();
+		let mut next_certains = certains.clone();
 
-		let mut next_certains = certains.union(&new_certains).cloned().collect::<HashSet<usize>>();
+		for id in self.thoughts[item.order].possible.iter() {
+			if acc_ids.contains(id) {
+				continue;
+			}
+
+			if let Some(entries) = self.certain_map.get(&id) {
+				for order in entries.keys() {
+					if !certains.contains(order) {
+						next_certains.push(*order);
+					}
+				}
+			}
+		}
 		next_certains.retain(|o| !next_contained.iter().any(|e| e.order == *o));
 
 		let included = self.cross_card_elim(state, &next_contained, &new_acc_ids, &next_certains, next_index + 1);
@@ -197,7 +208,7 @@ impl Player {
 					}
 				}
 
-				if (1..=10).contains(&thought.possible.len()) && thought.possible.iter().any(|id| !state.is_basic_trash(id)) {
+				if (1..=8).contains(&thought.possible.len()) && thought.possible.iter().any(|id| !state.is_basic_trash(id) && state.remaining_multiplicity(thought.possible.iter()) <= 10) {
 					self.cross_elim_candidates.push(IdEntry { order, player_index });
 				}
 
@@ -213,7 +224,7 @@ impl Player {
 
 		let all_ids = IdentitySet::from_iter(all_ids(&state.variant));
 		self.basic_card_elim(state, &all_ids);
-		while self.cross_card_elim(state, &Vec::new(), &IdentitySet::EMPTY, &HashSet::new(), 0) {}
+		while self.cross_card_elim(state, &Vec::new(), &IdentitySet::EMPTY, &Vec::new(), 0) {}
 	}
 
 	pub fn good_touch_elim(&mut self, frame: &Frame) {

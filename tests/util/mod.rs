@@ -8,7 +8,7 @@ use rust_bot::basics::game::{Convention, Game};
 use rust_bot::basics::identity_set::IdentitySet;
 use rust_bot::basics::util::visible_find;
 use rust_bot::basics::state::State;
-use rust_bot::basics::variant::{all_ids, card_count, id_touched, Variant};
+use rust_bot::basics::variant::{all_ids, id_touched, Variant};
 use std::sync::{Arc, LazyLock};
 
 pub enum Colour {
@@ -122,7 +122,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 		let Identity { suit_index, rank } = id;
 		state.discard_stacks[suit_index][rank - 1] += 1;
 
-		if state.discard_stacks[suit_index][rank - 1] > card_count(&state.variant, id) {
+		if state.discard_stacks[suit_index][rank - 1] > state.card_count(id) {
 			state.max_ranks[suit_index] = rank - 1;
 		}
 	}
@@ -130,7 +130,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 	for id in all_ids(&state.variant) {
 		let count = state.base_count(id) + visible_find(state, &players[state.our_player_index], id, Default::default(), |_, _| true).len();
 
-		if count > card_count(&state.variant, id) {
+		if count > state.card_count(id) {
 			panic!("Found {count} copies of {}!", state.log_id(id));
 		}
 	}
@@ -190,7 +190,7 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 					let Identity { suit_index, rank } = draw;
 					let count = state.base_count(draw) + visible_find(state, game.me(), draw, Default::default(), |_, _| true).len();
 
-					if count + 1 > card_count(&state.variant, draw) {
+					if count + 1 > state.card_count(draw) {
 						panic!("Found {} copies of {}!", count + 1, state.log_id(draw));
 					}
 					game.handle_action(&Action::Draw(DrawAction { player_index: turn_taker, order: state.card_order, suit_index: suit_index as i32, rank: rank as i32 }))

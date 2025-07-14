@@ -10,7 +10,7 @@ use crate::basics::card::{Card, IdOptions, Identifiable, Identity, MatchOptions}
 use crate::basics::game::Game;
 use crate::basics::player::Link;
 use crate::basics::util;
-use crate::basics::variant::{all_ids, card_count};
+use crate::basics::variant::{all_ids};
 use winnable::SimpleResult;
 
 type Frac = fraction::Fraction;
@@ -421,7 +421,7 @@ impl EndgameSolver {
 
 						format!("{}}} {} prob {} winrate {}",
 							(0..depth).map(|_| "  ").join(""),
-							performs.iter().map(|p| p.fmt_s(&game.state, player_turn)).join(", "),
+							performs.iter().map(|p| p.fmt_s(&game.state, next_player_index)).join(", "),
 							prob,
 							winrate)
 					}
@@ -508,7 +508,7 @@ fn find_remaining_ids(game: &Game) -> RemainingMap {
 	let mut remaining_ids = HashMap::new();
 
 	for id in all_ids(&state.variant) {
-		let total = card_count(&state.variant, id);
+		let total = state.card_count(id);
 		let missing = std::cmp::max(0, total - state.base_count(id) - seen_ids.get(&id).unwrap_or(&0));
 
 		if missing > 0 {

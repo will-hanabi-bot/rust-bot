@@ -6,7 +6,6 @@ use crate::basics::util::visible_find;
 
 use super::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions, Thought};
 use super::state::State;
-use super::variant::{card_count};
 use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use log::{warn};
@@ -288,7 +287,7 @@ impl Player {
 	pub fn unknown_ids(&self, state: &State, id: Identity) -> usize {
 		let visible_count: usize = state.hands.iter().map(|hand|
 			hand.iter().filter(|&&o| self.thoughts[o].is(&id)).count()).sum();
-		card_count(&state.variant, id) - state.base_count(id) - visible_count
+		state.card_count(id) - state.base_count(id) - visible_count
 	}
 
 	pub fn linked_orders(&self, state: &State) -> HashSet<usize> {

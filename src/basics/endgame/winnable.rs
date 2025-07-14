@@ -7,7 +7,7 @@ use crate::basics::action::PerformAction;
 use crate::basics::card::{Card, Identifiable, Identity};
 use crate::basics::game::Game;
 use crate::basics::util::players_between;
-use crate::basics::{state::State, variant::card_count};
+use crate::basics::{state::State};
 use super::{EndgameSolver, WinnableResult, UNWINNABLE, RemainingMap, remove_remaining};
 
 type Frac = fraction::Fraction;
@@ -31,7 +31,7 @@ impl EndgameSolver {
 						return None;
 					}
 
-					(card_count(&state.variant, *id) - state.base_count(*id) == orders.len()).then_some(id)
+					(state.card_count(*id) - state.base_count(*id) == orders.len()).then_some(id)
 				}
 			}
 		}).copied().collect()
