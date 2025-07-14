@@ -184,7 +184,7 @@ impl Player {
 			return true;
 		}
 
-		self.thoughts[order].possible.iter().all(|id| self.is_trash(frame, id, order))
+		self.thoughts[order].possible.iter().all(|id| frame.state.is_basic_trash(id))
 	}
 
 	pub fn order_kp(&self, frame: &Frame, order: usize) -> bool {

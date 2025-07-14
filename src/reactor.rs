@@ -546,6 +546,11 @@ impl Convention for Reactor {
 				let list = state.clue_touched(&state.hands[clue.target], &base_clue);
 
 				let action = Action::Clue(ClueAction { giver: state.our_player_index, target: clue.target, list, clue: base_clue });
+				let touched = state.clue_touched(&state.hands[clue.target], &base_clue);
+				// Do not simulate clues that touch only previously-clued trash
+				if touched.iter().all(|&o| state.deck[o].clued && state.is_basic_trash(state.deck[o].id().unwrap())) {
+					return None;
+				}
 				info!("{}", format!("===== Predicting value for ({}) =====", action.fmt(state)).green());
 				let value = Reactor::predict_value(game, &action);
 

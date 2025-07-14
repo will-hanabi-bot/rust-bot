@@ -51,10 +51,10 @@ pub fn check_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> (Vec<usiz
 		if let Some(id) = thought.identity(&Default::default()) {
 			let frame = Frame::new(state, &game.meta);
 			let copy = visible_find(state, common, id, MatchOptions { infer: true, ..Default::default() }, |player_index, o|
-				player_index != *giver && frame.is_touched(o) && o != *order);
+				player_index == *target && frame.is_touched(o) && o != *order);
 
 			if !copy.is_empty() {
-				info!("duplicate {} revealed! copy of order {}", state.log_id(id), copy[0]);
+				info!("same-hand duplicate {} revealed! copy of order {}", state.log_id(id), copy[0]);
 				return true;
 			}
 		}

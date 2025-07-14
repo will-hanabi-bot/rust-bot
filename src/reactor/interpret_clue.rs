@@ -331,7 +331,7 @@ impl Reactor {
 			).collect::<Vec<_>>()
 		}).collect::<Vec<_>>();
 
-		// If we know which card is connecting, Update the connecting card to be urgent
+		// If we know which card is connecting, update the connecting card to be urgent
 		if let Some(id) = game.state.deck[target].id() {
 			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(&id)) {
 				let conn_id = Identity { suit_index: id.suit_index, rank: id.rank - 1 };

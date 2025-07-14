@@ -45,11 +45,12 @@ pub struct EndgameSolver {
 	simple_cache: HashMap<String, WinnableResult>,
 	simpler_cache: HashMap<String, bool>,
 	if_cache: HashMap<String, SimpleResult>,
+	success_rate: Vec<HashMap<PerformAction, (Frac, usize)>>,
 }
 
 impl EndgameSolver {
 	pub fn new() -> Self {
-		EndgameSolver { simple_cache: HashMap::new(), simpler_cache: HashMap::new(), if_cache: HashMap::new() }
+		EndgameSolver { simple_cache: HashMap::new(), simpler_cache: HashMap::new(), if_cache: HashMap::new(), success_rate: Vec::new() }
 	}
 
 	pub fn solve_game(&mut self, game: &Game, player_turn: usize) -> Result<(PerformAction, Frac), String> {
@@ -158,6 +159,8 @@ impl EndgameSolver {
 			}
 			arrangements = arrangements.iter().flat_map(expand_arr).collect();
 		}
+
+		arrangements.sort_by_key(|a| -a.prob);
 
 		info!("arrangements {}", arrangements.len());
 
@@ -356,11 +359,15 @@ impl EndgameSolver {
 		game.simulate_action(&util::perform_to_action(state, action, player_turn, None))
 	}
 
-	fn optimize(&mut self, hypo_games: (Vec<GameArr>, Vec<GameArr>), actions: Vec<(PerformAction, Vec<Identity>)>, player_turn: usize, depth: usize, deadline: &Instant) -> WinnableResult {
+	fn optimize(&mut self, hypo_games: (Vec<GameArr>, Vec<GameArr>), mut actions: Vec<(PerformAction, Vec<Identity>)>, player_turn: usize, depth: usize, deadline: &Instant) -> WinnableResult {
 		let (undrawn, drawn) = hypo_games;
 		let next_player_index = undrawn[0].game.state.next_player_index(player_turn);
 		let mut best_winrate = Frac::ZERO;
 		let mut best_actions = Vec::new();
+
+		if let Some(sr) = self.success_rate.get(depth) {
+			actions.sort_by_key(|a| sr.get(&a.0).map(|(frac, _)| -frac).unwrap_or(Frac::ZERO));
+		}
 
 		for (perform, winnable_draws) in actions {
 			if Instant::now() > *deadline {
@@ -435,6 +442,17 @@ impl EndgameSolver {
 					break;
 				}
 			}
+
+			while depth >= self.success_rate.len() {
+				self.success_rate.push(HashMap::new());
+			}
+
+			self.success_rate[depth].entry(perform).and_modify(|entry| {
+				let (frac, times) = entry;
+				let new_frac = (*frac * *times + action_winrate) / (*times + 1);
+				*frac = new_frac;
+				*times += 1;
+			}).or_insert((action_winrate, 1));
 
 			if action_winrate == Frac::ONE {
 				return Ok((vec![perform], Frac::ONE));
