@@ -54,11 +54,6 @@ impl EndgameSolver {
 
 		// println!("void players: {:?}, endgame_turns: {:?}, current turn: {}", void_players, state.endgame_turns, state.player_names[player_turn]);
 
-		if void_players.len() as i32 > state.pace() {
-			// println!("too many void players: {}, pace {}", void_players.len(), state.pace());
-			return true;
-		}
-
 		let must_plays = state.hands.iter().map(|hand| EndgameSolver::find_must_plays(state, hand)).collect::<Vec<_>>();
 		let must_start_endgame = must_plays.iter().positions(|plays| plays.len() > 1).collect::<Vec<_>>();
 
@@ -98,6 +93,10 @@ impl EndgameSolver {
 				}
 			}
 		}
+		else if void_players.len() as i32 > state.pace() {
+			// println!("too many void players: {}, pace {}", void_players.len(), state.pace());
+			return true;
+		}
 		false
 	}
 
@@ -112,7 +111,7 @@ impl EndgameSolver {
 		match state.endgame_turns {
 			None => UNWINNABLE,
 			Some(endgame_turns) => {
-				if state.max_score() - state.score() > endgame_turns {
+				if state.rem_score() > endgame_turns {
 					return UNWINNABLE;
 				}
 

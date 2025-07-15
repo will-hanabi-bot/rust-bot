@@ -208,7 +208,7 @@ impl Player {
 					}
 				}
 
-				if (1..=8).contains(&thought.possible.len()) && thought.possible.iter().any(|id| !state.is_basic_trash(id) && state.remaining_multiplicity(thought.possible.iter()) <= 10) {
+				if thought.possible.iter().any(|id| !state.is_basic_trash(id)) && state.remaining_multiplicity(thought.possible.iter()) <= 8 {
 					self.cross_elim_candidates.push(IdEntry { order, player_index });
 				}
 

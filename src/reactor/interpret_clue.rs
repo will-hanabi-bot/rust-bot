@@ -27,7 +27,7 @@ impl Reactor {
 		let prev_playables = prev.players[*target].thinks_playables(&prev.frame(), *target);
 		if clued_resets.iter().chain(duplicate_reveals.iter()).any(|o| prev_playables.contains(o)) {
 			info!("fix clue!");
-			return Some(ClueInterp::Reveal);
+			return Some(ClueInterp::Fix);
 		}
 		info!("not an urgent fix clue, not interpreting");
 		None
@@ -37,24 +37,24 @@ impl Reactor {
 		info!("interpreting stable clue!");
 		let ClueAction { target, list, clue, .. } = &action;
 		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
+		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 
-		if clue.kind == ClueKind::RANK && game.state.includes_variant(&PINKISH) {
-			let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
+		if clue.kind == ClueKind::RANK && !newly_touched.is_empty() {
 			let mut focus = newly_touched.iter().max().unwrap();
 
-			// Trash pink promise
+			// Trash promise
 			if (0..game.state.variant.suits.len()).all(|suit_index| game.state.is_basic_trash(Identity { suit_index, rank: clue.value })) {
 				game.common.thoughts[*focus].inferred.retain(|i| game.state.is_basic_trash(i));
 				game.meta[*focus].trash = true;
 			}
-			// Playable pink promise
+			// Playable promise
 			else if (0..game.state.variant.suits.len()).all(|suit_index| {
 				let id = Identity { suit_index, rank: clue.value };
 				game.state.is_basic_trash(id) || game.state.is_playable(id)
 			}) {
-				// Move focus to lock card if touched
+				// Move focus to lock card if touched in a pinkish variant
 				if let Some(lock_order) = game.state.hands[*target].iter().filter(|&&o| !prev.state.deck[o].clued).min() {
-					if list.contains(lock_order) {
+					if game.state.includes_variant(&PINKISH) && list.contains(lock_order) {
 						focus = lock_order;
 					}
 				}
@@ -70,19 +70,18 @@ impl Reactor {
 
 		if !clued_resets.is_empty() || !duplicate_reveals.is_empty() {
 			info!("fix clue!");
-			return Some(ClueInterp::Reveal);
+			return Some(ClueInterp::Fix);
 		}
 
 		let Game { common: prev_common, .. } = prev;
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
 
-		if !state.in_endgame() && !prev_common.thinks_playables(&prev.frame(), *target).is_empty() {
-			warn!("target was already loaded with a playable!");
-			return None;
-		}
+		// if !state.in_endgame() && !prev_common.thinks_playables(&prev.frame(), *target).is_empty() {
+		// 	warn!("target was already loaded with a playable!");
+		// 	return None;
+		// }
 
-		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 		if newly_touched.is_empty() {
 			return Some(ClueInterp::Reveal);
 		}

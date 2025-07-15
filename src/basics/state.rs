@@ -99,6 +99,10 @@ impl State {
 		self.max_ranks.iter().sum()
 	}
 
+	pub fn rem_score(&self) -> usize {
+		self.max_score() - self.score()
+	}
+
 	pub fn pace(&self) -> i32 {
 		self.score() as i32 + self.cards_left as i32 + self.num_players as i32 - self.max_score() as i32
 	}

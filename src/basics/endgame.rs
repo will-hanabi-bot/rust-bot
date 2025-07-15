@@ -1,5 +1,6 @@
 use colored::Colorize;
-use fraction::{ConstZero, ConstOne};
+use fraction::{ConstOne, ConstZero, GenericFraction};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use itertools::Itertools;
@@ -19,6 +20,8 @@ mod winnable;
 
 type WinnableResult = Result<(Vec<PerformAction>, Frac), String>;
 const UNWINNABLE: WinnableResult = Err(String::new());
+
+const MONTE_CARLO: bool = true;
 
 pub fn remove_remaining(remaining: &RemainingMap, id: Identity) -> RemainingMap {
 	let RemainingEntry { missing, .. } = &remaining[&id];
@@ -54,8 +57,8 @@ impl EndgameSolver {
 	}
 
 	pub fn solve_game(&mut self, game: &Game, player_turn: usize) -> Result<(PerformAction, Frac), String> {
-		let deadline = Instant::now() + Duration::from_secs(5);
-		let remaining_ids = find_remaining_ids(game);
+		let deadline = Instant::now() + Duration::from_secs(1);
+		let (remaining_ids, own_ids) = find_remaining_ids(game);
 
 		if remaining_ids.iter().filter(|(id, v)| !game.state.is_basic_trash(**id) && v.all).count() > 2 {
 			return Err(format!("couldn't find any {}!", remaining_ids.keys().filter_map(|i|
@@ -69,16 +72,12 @@ impl EndgameSolver {
 		let mut unknown_own = Vec::new();
 		let linked_orders = game.me().linked_orders(&state);
 
-		for &order in game.state.our_hand() {
-			match game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
-				Some(id) =>
-					if linked_orders.contains(&order) || (state.is_basic_trash(id) && game.me().thoughts[order].id().is_none())  {
-						unknown_own.push(order);
-					} else {
-						state.deck[order].base = Some(Identity { suit_index: id.suit_index, rank: id.rank });
-					},
-				None =>
-					unknown_own.push(order)
+		for (order, id) in own_ids {
+			if let Some(id) = id {
+				state.deck[order].base = Some(Identity { suit_index: id.suit_index, rank: id.rank });
+			}
+			else {
+				unknown_own.push(order);
 			}
 		}
 
@@ -102,7 +101,7 @@ impl EndgameSolver {
 			}
 		}
 
-		info!("remaining ids: {:?}", remaining_ids);
+		info!("remaining ids: {}", remaining_ids.iter().map(|(id, entry)| format!("{} (missing {})", state.log_id(*id), entry.missing)).join(", "));
 
 		struct Arrangement {
 			ids: Vec<Identity>,
@@ -150,15 +149,34 @@ impl EndgameSolver {
 			}).collect()
 		};
 
-		let mut arrangements = vec![Arrangement { ids: vec![], prob: Frac::ONE, remaining: remaining_ids.clone() }];
+		let mut all_arrangements = vec![Arrangement { ids: vec![], prob: Frac::ONE, remaining: remaining_ids.clone() }];
 
 		for _ in 0..unknown_own.len() {
 			if Instant::now() > deadline {
 				log::set_max_level(level);
 				return Err("timed out".to_string());
 			}
-			arrangements = arrangements.iter().flat_map(expand_arr).collect();
+			all_arrangements = all_arrangements.iter().flat_map(expand_arr).collect();
 		}
+
+		let mut arrangements = if MONTE_CARLO {
+			let mut trash_arrs: HashMap<String, Vec<Arrangement>> = HashMap::new();
+
+			for arr in all_arrangements {
+				let trash_arr = arr.ids.iter().enumerate().filter_map(|(i, id)| state.is_basic_trash(*id).then_some(i)).join("");
+				trash_arrs.entry(trash_arr).or_default().push(arr);
+			}
+
+			let mut arrangements = trash_arrs.remove("").unwrap_or_default();
+
+			for (_, arrs) in trash_arrs.drain() {
+				let total_winrate = arrs.iter().map(|arr| arr.prob).sum::<GenericFraction<u64>>();
+				let amt = std::cmp::min(arrs.len(), 3);
+				let selected_arrs = arrs.into_iter().take(amt);
+				arrangements.extend(selected_arrs.map(|arr| Arrangement { prob: total_winrate / amt, ..arr }));
+			}
+			arrangements
+		} else { all_arrangements };
 
 		arrangements.sort_by_key(|a| -a.prob);
 
@@ -510,15 +528,55 @@ pub struct RemainingEntry {
 	pub all: bool,
 }
 
-fn find_remaining_ids(game: &Game) -> RemainingMap {
+fn find_remaining_ids(game: &Game) -> (RemainingMap, Vec<(usize, Option<Identity>)>) {
 	let Game { state, .. } = game;
 	let mut seen_ids = HashMap::new();
-	let linked_orders = game.me().linked_orders(state);
+	let mut own_ids: Vec<(usize, Option<Identity>)> = Vec::new();
 
-	for &order in &state.hands.concat() {
-		if let Some(id) = game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
-			if !(linked_orders.contains(&order) || (state.is_basic_trash(id) && game.me().thoughts[order].id().is_none()))  {
+	// Identify all the cards we know for sure
+	for i in 0..state.num_players {
+		for &order in &state.hands[i] {
+			if let Some(id) = game.me().thoughts[order].id() {
 				seen_ids.entry(id).and_modify(|e| *e += 1).or_insert(1);
+
+				if i == state.our_player_index {
+					own_ids.push((order, Some(id)));
+				}
+			} else if i == state.our_player_index {
+				own_ids.push((order, None));
+			}
+		}
+	}
+
+	let mut infer_ids: HashMap<Identity, Vec<usize>> = HashMap::new();
+
+	// Identify any remaining inferred ids
+	for &(order, id) in &own_ids {
+		if id.is_some() {
+			continue;
+		}
+
+		if let Some(id) = game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
+			infer_ids.entry(id).and_modify(|e| e.push(order)).or_insert(vec![order]);
+		}
+	}
+
+	// Check that the inferred ids don't add up to too many
+	for (id, orders) in infer_ids {
+		match seen_ids.entry(id) {
+			Entry::Occupied(mut entry) => {
+				if entry.get() + orders.len() + state.base_count(id) > state.card_count(id) {
+					continue;
+				}
+				*entry.get_mut() += orders.len();
+				own_ids.retain(|o| !orders.contains(&o.0));
+			}
+			Entry::Vacant(entry) => {
+				if orders.len() + state.base_count(id) > state.card_count(id) {
+					continue;
+				}
+				entry.insert(orders.len());
+				own_ids.retain(|o| !orders.contains(&o.0));
 			}
 		}
 	}
@@ -527,12 +585,12 @@ fn find_remaining_ids(game: &Game) -> RemainingMap {
 
 	for id in all_ids(&state.variant) {
 		let total = state.card_count(id);
-		let missing = std::cmp::max(0, total - state.base_count(id) - seen_ids.get(&id).unwrap_or(&0));
+		let missing = total - state.base_count(id) - seen_ids.get(&id).unwrap_or(&0);
 
 		if missing > 0 {
 			remaining_ids.insert(id, RemainingEntry { missing, all: missing == total });
 		}
 	}
 
-	remaining_ids
+	(remaining_ids, own_ids)
 }

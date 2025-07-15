@@ -7,7 +7,7 @@ use crate::basics::game::{frame::Frame, Game};
 use crate::basics::util::visible_find;
 
 pub fn check_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> (Vec<usize>, Vec<usize>) {
-	let ClueAction { clue, giver, list, target } = action;
+	let ClueAction { clue, list, target, .. } = action;
 	let Game { common: old_common, .. } = prev;
 	let Game { common, state, .. } = game;
 

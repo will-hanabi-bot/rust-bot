@@ -191,7 +191,7 @@ impl Player {
 		if frame.meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
 			return true;
 		}
-		self.thoughts[order].possible.iter().all(|id| frame.state.is_playable(id))
+		(if frame.meta[order].focused { self.thoughts[order].possibilities() } else { self.thoughts[order].possible }).iter().all(|id| frame.state.is_playable(id))
 	}
 
 	pub fn thinks_locked(&self, frame: &Frame, player_index: usize) -> bool {
@@ -215,6 +215,10 @@ impl Player {
 				}
 			}
 
+			if meta[order].status == CardStatus::CalledToPlay {
+				return Some(order);
+			}
+
 			let thought = &self.thoughts[order];
 			let unsafe_linked = linked_orders.contains(&order) && (
 				state.strikes == 2 ||
@@ -226,7 +230,7 @@ impl Player {
 				return None;
 			}
 
-			thought.possibilities().iter().all(|id| state.is_playable(id)).then_some(order)
+			(if state.strikes != 2 || meta[order].focused { thought.possibilities() } else { thought.possible }).iter().all(|id| state.is_playable(id)).then_some(order)
 		}).collect()
 	}
 

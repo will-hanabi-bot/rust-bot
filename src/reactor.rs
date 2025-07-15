@@ -18,7 +18,7 @@ pub struct Reactor;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ClueInterp {
-	None, Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Reclue, Stall
+	None, Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Fix, Reclue, Stall
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -76,13 +76,17 @@ impl Reactor {
 			bad_touch
 		);
 
-		let value: f32 = good_touch
+		let mut value: f32 = good_touch
 			+ (playables.len() as f32 - 2.0*duped_playables as f32)
 			+ 0.2 * untouched_plays as f32
 			+ if state.in_endgame() { 0.01 } else { 0.1 } * revealed_trash as f32
 			+ if state.in_endgame() { 0.2 } else { 0.1 } * fill.len() as f32
 			+ if state.in_endgame() { 0.1 } else { 0.05 } * elim.len() as f32
 			+ 0.1 * bad_touch.len() as f32;
+
+		if let Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Fix))) = hypo.last_move {
+			value += 1.0;
+		}
 
 		value
 	}
@@ -95,7 +99,7 @@ impl Reactor {
 	}
 
 	fn best_value(prev: &Game, game: &Game, offset: usize, value: f32) -> f32 {
-		let Game { state, common, .. } = game;
+		let Game { state, common, meta, .. } = game;
 		let frame = game.frame();
 		let player_index = (state.our_player_index + offset) % state.num_players;
 
@@ -109,7 +113,7 @@ impl Reactor {
 			} else { 0.1 });
 
 		let sieving_trash = || {
-			if state.in_endgame() || state.max_score() - state.score() < state.variant.suits.len() || prev.players[player_index].thinks_loaded(&prev.frame(), player_index) {
+			if state.in_endgame() || state.rem_score() < 2*state.variant.suits.len() || prev.players[player_index].thinks_loaded(&prev.frame(), player_index) {
 				return false;
 			}
 
@@ -170,7 +174,12 @@ impl Reactor {
 		}
 
 		let trash = game.players[player_index].thinks_trash(&frame, player_index);
-		let discard = trash.first().unwrap_or(&state.hands[player_index][0]);
+		let discard =  if let Some(urgent_dc) = trash.iter().find(|o| meta[**o].urgent) {
+			urgent_dc
+		} else {
+			trash.first().unwrap_or(&state.hands[player_index][0])
+		};
+
 		let (id_str, action, dc_value) = match state.deck[*discard].id() {
 			None => {
 				let action = Action::discard(player_index, *discard, -1, -1, false);
@@ -213,9 +222,21 @@ impl Reactor {
 				Reactor::get_result(game, &hypo_game, clue) * mult - 0.25
 			},
 			Action::Discard(DiscardAction { player_index, order, .. }) => {
-				let mult = if state.in_endgame() { 0.1 } else { 1.0 };
+				let useful_count = state.our_hand().iter().filter(|&&o|
+					state.deck[o].clued && game.me().thoughts[o].inferred.iter().all(|i| !state.is_basic_trash(i))).count();
 
-				mult * if common.thinks_trash(&game.frame(), *player_index).contains(order) { 1.2 } else { 0.5 }
+				let mult = if state.in_endgame() {
+					0.2 * (1_i32 - useful_count as i32) as f32 - (state.num_players as i32 - state.pace()) as f32 * 0.1
+				} else if !game.me().thinks_playables(&game.frame(), state.our_player_index).is_empty() {
+					if state.in_endgame() { 0.1 } else { 0.25 }
+				} else {
+					1.0
+				};
+
+				mult * if common.thinks_trash(&game.frame(), *player_index).contains(order) {
+					(if state.clue_tokens <= 2 { 1.2 } else if state.clue_tokens <= 4 { 1.0 } else { 0.8 }) *
+					(if state.rem_score() <= state.variant.suits.len() { 0.1 } else if state.rem_score() <= 2*state.variant.suits.len() { 0.5 } else { 1.0 })
+				} else { 0.5 }
 			},
 			Action::Play(PlayAction { order, suit_index, rank, .. }) => {
 				if *suit_index == -1 || *rank == -1 {
@@ -425,7 +446,7 @@ impl Convention for Reactor {
 			}
 		}
 
-		if state.in_endgame() && state.max_score() - state.score() <= state.variant.suits.len() + 1{
+		if state.in_endgame() && state.rem_score() <= state.variant.suits.len() + 1{
 			info!("{}", "trying to solve endgame...".purple());
 
 			let mut solver = EndgameSolver::new();
@@ -497,7 +518,7 @@ impl Convention for Reactor {
 
 		let mut all_actions = all_clues.into_iter().chain(all_plays).chain(all_discards).collect::<Vec<_>>();
 
-		if !cant_discard && num_plays == 0 && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
+		if !cant_discard && (state.clue_tokens == 0 || num_plays == 0) && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
 			let chop = state.our_hand()[0];
 
 			all_actions.push((
