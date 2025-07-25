@@ -58,7 +58,7 @@ impl VariantManager {
 	}
 
 	pub fn get_variant(&self, name: &str) -> Variant {
-		let JSONVariant { id, name, suits } = self.variants.iter().find(|variant| variant.name == name).unwrap_or_else(|| panic!("Variant '{}' not found", name)).clone();
+		let JSONVariant { id, name, suits } = self.variants.iter().find(|variant| variant.name == name).unwrap_or_else(|| panic!("Variant '{name}' not found")).clone();
 
 		let mut short_forms: Vec<String> = Vec::new();
 		for suit in &suits {
@@ -73,10 +73,10 @@ impl VariantManager {
 							abbreviation.clone()
 						} else {
 							// Look for the first unused character
-							suit.to_lowercase().split("").find(|c| !short_forms.contains(&c.to_string())).unwrap_or_else(|| panic!("No unused character found for suit '{}' in {:?}", suit, suits)).to_string()
+							suit.to_lowercase().split("").find(|c| !short_forms.contains(&c.to_string())).unwrap_or_else(|| panic!("No unused character found for suit '{suit}' in {suits:?}")).to_string()
 						}
 					} else {
-						panic!("Colour '{}' not found", suit);
+						panic!("Colour '{suit}' not found");
 					}
 				}
 			};

@@ -150,7 +150,7 @@ impl Action {
 				format!("Turn {} ({})", num, state.player_names[*current_player_index as usize])
 			}
 			Action::Status(StatusAction { clues, score, max_score }) => {
-				format!("Status! Clues: {}, Score: {}/{}", clues, score, max_score)
+				format!("Status! Clues: {clues}, Score: {score}/{max_score}")
 			}
 			Action::GameOver(GameOverAction { .. }) => {
 				"Game over!".to_string()
@@ -187,9 +187,9 @@ impl<'de> Deserialize<'de> for PerformAction {
 						2 => Ok(PerformAction::Colour { table_id, target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
 						3 => Ok(PerformAction::Rank { table_id, target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
 						4 => Ok(PerformAction::Terminate { table_id, target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
-						_ => panic!("Invalid action type {:?}", s)
+						_ => panic!("Invalid action type {s:?}")
 					},
-					_ => panic!("Invalid action type {:?}", s)
+					_ => panic!("Invalid action type {s:?}")
 				}
 			}
 			_ => Err(serde::de::Error::unknown_variant(&s.to_string(), &["number"])),
@@ -222,7 +222,7 @@ impl PerformAction {
 				(Clue { kind: ClueKind::RANK, value: *value, target: *target }).fmt(state)
 			}
 			PerformAction::Terminate { target, value, .. } => {
-				format!("Game ended: {} {}", target, value)
+				format!("Game ended: {target} {value}")
 			}
 		}
 	}
@@ -242,7 +242,7 @@ impl PerformAction {
 				(Clue { kind: ClueKind::RANK, value: *value, target: *target }).fmt(state)
 			}
 			PerformAction::Terminate { target, value, .. } => {
-				format!("Game ended: {} {}", target, value)
+				format!("Game ended: {target} {value}")
 			}
 		};
 

@@ -43,7 +43,7 @@ impl Reactor {
 		let bad_playable = state.hands.concat().into_iter().find(|o| hypo.meta[*o].status == CardStatus::CalledToPlay && !hypo.me().hypo_plays.contains(o));
 
 		if let Some(bad_playable) = bad_playable {
-			warn!("clue {} results in {} looking playable!", clue.fmt(state, *target), state.deck[bad_playable].id().map(|i| state.log_id(i)).unwrap_or(format!("order {}", bad_playable)));
+			warn!("clue {} results in {} looking playable!", clue.fmt(state, *target), state.deck[bad_playable].id().map(|i| state.log_id(i)).unwrap_or(format!("order {bad_playable}")));
 			return -100.0;
 		}
 
@@ -255,7 +255,7 @@ impl Reactor {
 			},
 			_ => -1.0
 		};
-		info!("starting value {}", value);
+		info!("starting value {value}");
 
 		let best = Reactor::best_value(game, &hypo_game, 1, value);
 		info!("{}: {} ({:?})", action.fmt(state), best, hypo_game.last_move.unwrap());
@@ -264,15 +264,11 @@ impl Reactor {
 }
 
 impl Convention for Reactor {
-	fn interpret_clue(&self, game: &mut Game, action: &ClueAction) {
-		let prev = game.clone();
-		basics::on_clue(game, action);
-		basics::elim(game, true);
-
+	fn interpret_clue(&self, prev: &Game, game: &mut Game, action: &ClueAction) {
 		let ClueAction { giver, target, .. } = &action;
 
 		let interp = if prev.common.thinks_locked(&prev.frame(), *giver) || game.state.in_endgame() || (prev.state.clue_tokens == 8 && prev.state.turn_count != 1) {
-			Reactor::interpret_stable(&prev, game, action)
+			Reactor::interpret_stable(prev, game, action, true)
 		}
 		else {
 			let mut reacter = None;
@@ -297,14 +293,14 @@ impl Convention for Reactor {
 
 			match reacter {
 				None => {
-					Reactor::interpret_fix(&prev, game, action)
+					Reactor::interpret_fix(prev, game, action)
 				}
 				Some(reacter) => {
 					if &reacter == target {
-						Reactor::interpret_stable(&prev, game, action)
+						Reactor::interpret_stable(prev, game, action, false)
 					}
 					else {
-						Reactor::interpret_reactive(&prev, game, action, reacter)
+						Reactor::interpret_reactive(prev, game, action, reacter)
 					}
 				}
 			}
@@ -318,11 +314,8 @@ impl Convention for Reactor {
 		basics::elim(game, true);
 	}
 
-	fn interpret_discard(&self, game: &mut Game, action: &DiscardAction) {
-		let prev = game.clone();
+	fn interpret_discard(&self, prev: &Game, game: &mut Game, action: &DiscardAction) {
 		let DiscardAction { player_index, order, failed, .. } = action;
-
-		basics::on_discard(game, action);
 
 		if *failed {
 			warn!("bombed! not reacting");
@@ -344,7 +337,7 @@ impl Convention for Reactor {
 
 			let receive_order = receiver_hand[target_slot - 1];
 			if !state.hands[*receiver].contains(&receive_order) {
-				warn!("Receiver no longer holds target {}!", receive_order);
+				warn!("Receiver no longer holds target {receive_order}!");
 			}
 
 			let receive_thought = &mut common.thoughts[receive_order];
@@ -374,11 +367,8 @@ impl Convention for Reactor {
 		basics::elim(game, true);
 	}
 
-	fn interpret_play(&self, game: &mut Game, action: &PlayAction) {
-		let prev = game.clone();
+	fn interpret_play(&self, prev: &Game, game: &mut Game, action: &PlayAction) {
 		let PlayAction { player_index, order, .. } = action;
-
-		basics::on_play(game, action);
 
 		let Game { common, state, meta, .. } = game;
 		if let Some(WaitingConnection { reacter, receiver, receiver_hand, clue, focus_slot, .. }) = common.waiting.first() {
@@ -395,7 +385,7 @@ impl Convention for Reactor {
 
 			let receive_order = receiver_hand[target_slot - 1];
 			if !state.hands[*receiver].contains(&receive_order) {
-				warn!("Receiver no longer holds target {}!", receive_order);
+				warn!("Receiver no longer holds target {receive_order}!");
 			}
 
 			let receive_thought = &mut common.thoughts[receive_order];
@@ -457,7 +447,7 @@ impl Convention for Reactor {
 			match result {
 				Ok((perform, _)) => return perform,
 				Err(err) => {
-					info!("couldn't solve endgame: {}", err);
+					info!("couldn't solve endgame: {err}");
 				}
 			}
 		}
@@ -470,8 +460,8 @@ impl Convention for Reactor {
 			playable_orders.retain(|&o| me.order_kp(&frame, o));
 		}
 
-		info!("playables {:?}", playable_orders);
-		info!("trash {:?}", trash_orders);
+		info!("playables {playable_orders:?}");
+		info!("trash {trash_orders:?}");
 
 		let all_clues = if state.clue_tokens == 0 { Vec::new() } else {
 			(1..state.num_players).flat_map(|offset| {
@@ -542,7 +532,7 @@ impl Convention for Reactor {
 		}).1.unwrap().0
 	}
 
-	fn update_turn(&self, game: &mut Game, action: &TurnAction) {
+	fn update_turn(&self, _prev: &Game, game: &mut Game, action: &TurnAction) {
 		let Game { common, state, .. } = game;
 		let TurnAction { current_player_index, .. } = action;
 

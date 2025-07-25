@@ -205,7 +205,7 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 		}
 		_ => {
 			if draw.is_some() {
-				panic!("Unexpected draw for action {:?}", action);
+				panic!("Unexpected draw for action {action:?}");
 			}
 		}
 	}

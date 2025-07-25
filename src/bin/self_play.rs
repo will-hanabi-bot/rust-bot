@@ -25,7 +25,7 @@ impl Args {
 			let parts = arg.split('=').collect::<Vec<&str>>();
 
 			if parts.len() != 2 {
-				panic!("Invalid argument {}", arg);
+				panic!("Invalid argument {arg}");
 			}
 
 			let key = parts[0];
@@ -172,7 +172,7 @@ async fn main() {
 		}
 		fs::write(format!("seeds/{i}.json"), data).unwrap_or_else(|_| panic!("Should be able to write to `seeds/{i}.json`"));
 
-		println!("Seed {}: Score: {}, Result: {:?}", i, score, result);
+		println!("Seed {i}: Score: {score}, Result: {result:?}");
 	}
 
 	std::process::exit(0);

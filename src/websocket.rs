@@ -25,7 +25,7 @@ async fn spawn_ws_client(req: Request<()>, mut debug_receiver: mpsc::UnboundedRe
 	spawn(async move {
 		while let Some(cmd) = receiver.recv().await {
 			if let Err(e) = ws_write.send(Message::Text(cmd.into())).await {
-				eprintln!("Error sending over WebSocket: {:?}", e);
+				eprintln!("Error sending over WebSocket: {e:?}");
 				break;
 			}
 			time::sleep(Duration::from_millis(500)).await;
@@ -47,11 +47,11 @@ async fn spawn_ws_client(req: Request<()>, mut debug_receiver: mpsc::UnboundedRe
 							client.handle_msg(text.to_string());
 						}
 						Some(Ok(Message::Close(frame))) => {
-							println!("[Server closed connection]: {:?}", frame);
+							println!("[Server closed connection]: {frame:?}");
 							break;
 						}
 						Some(Err(e)) => {
-							eprintln!("WebSocket error: {:?}", e);
+							eprintln!("WebSocket error: {e:?}");
 							break;
 						}
 						None => {
@@ -93,13 +93,13 @@ pub fn send_pm(outgoing: &mpsc::UnboundedSender<String>, recipient: &str, msg: &
 }
 
 pub fn send_chat(outgoing: &mpsc::UnboundedSender<String>, table_id: &str, msg: &str) {
-	let ws_msg = WsMessage { msg, recipient: "", room: &format!("table{}", table_id) };
+	let ws_msg = WsMessage { msg, recipient: "", room: &format!("table{table_id}") };
 	outgoing.send(format!("chat {}", serde_json::to_string(&ws_msg).unwrap())).unwrap();
 }
 
 pub fn send_cmd(outgoing: &mpsc::UnboundedSender<String>, command: &str, args: &str) {
 	let cmd = format!("{command} {args}");
-	println!("Sending command: {}", cmd);
+	println!("Sending command: {cmd}");
 	outgoing.send(cmd).unwrap();
 }
 

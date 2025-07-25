@@ -35,6 +35,7 @@ pub struct WaitingConnection {
 	pub receiver_hand: Vec<usize>,
 	pub clue: BaseClue,
 	pub focus_slot: usize,
+	pub inverted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -167,7 +168,7 @@ impl Player {
 		if *trash || *status == CardStatus::CalledToDiscard {
 			if let Some(depends) = depends_on {
 				if depends.iter().any(|d| frame.state.hands.concat().contains(d)) {
-					warn!("{} depends on {:?}!", order, depends);
+					warn!("{order} depends on {depends:?}!");
 				}
 			}
 			else {
@@ -210,7 +211,7 @@ impl Player {
 		state.hands[player_index].iter().filter_map(|&order| {
 			if let Some(depends) = &meta[order].depends_on {
 				if depends.iter().any(|d| state.hands.concat().contains(d)) {
-					warn!("{} depends on {:?}!", order, depends);
+					warn!("{order} depends on {depends:?}!");
 					return None;
 				}
 			}
@@ -230,7 +231,8 @@ impl Player {
 				return None;
 			}
 
-			(if state.strikes != 2 || meta[order].focused { thought.possibilities() } else { thought.possible }).iter().all(|id| state.is_playable(id)).then_some(order)
+			let poss = if self.player_index != state.our_player_index || state.strikes != 2 || meta[order].focused { thought.possibilities() } else { thought.possible };
+			poss.iter().all(|id| state.is_playable(id)).then_some(order)
 		}).collect()
 	}
 

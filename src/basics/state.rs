@@ -201,8 +201,8 @@ impl State {
 	}
 
 	pub fn expand_short(&self, short: &str) -> Identity {
-		let suit_index = self.variant.short_forms.iter().position(|form| form == &short[0..1]).unwrap_or_else(|| panic!("Colour {} doesn't exist in selected variant", short));
-		Identity { suit_index, rank: short[1..2].parse().unwrap_or_else(|_| panic!("Rank {} doesn't exist in selected variant", short)) }
+		let suit_index = self.variant.short_forms.iter().position(|form| form == &short[0..1]).unwrap_or_else(|| panic!("Colour {short} doesn't exist in selected variant"));
+		Identity { suit_index, rank: short[1..2].parse().unwrap_or_else(|_| panic!("Rank {short} doesn't exist in selected variant")) }
 	}
 
 	pub fn log_id(&self, id: Identity) -> String {

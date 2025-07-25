@@ -23,7 +23,7 @@ impl Args {
 			let parts = arg.split('=').collect::<Vec<&str>>();
 
 			if parts.len() != 2 {
-				panic!("Invalid argument {}", arg);
+				panic!("Invalid argument {arg}");
 			}
 
 			let key = parts[0];

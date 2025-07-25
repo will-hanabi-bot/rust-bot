@@ -302,7 +302,7 @@ impl EndgameSolver {
 
 			match state.deck[order].id() {
 				None => {
-					info!("can't identify {}", order);
+					info!("can't identify {order}");
 					continue;
 				},
 				Some(_) => {
@@ -441,7 +441,7 @@ impl EndgameSolver {
 
 						if action_winrate > Frac::ONE {
 							println!("{}", hypo_games.iter().map(|h| h.prob).join(","));
-							panic!("Winrate exceeds 100% {} {}", prob, winrate);
+							panic!("Winrate exceeds 100% {prob} {winrate}");
 						}
 
 						format!("{}}} {} prob {} winrate {}",

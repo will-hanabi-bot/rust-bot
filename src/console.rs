@@ -54,7 +54,7 @@ pub fn spawn_console(debug_sender: mpsc::UnboundedSender<DebugCommand>) {
 			match DebugCommand::parse(line) {
 				Some(cmd) => {
 					if let Err(e) = debug_sender.send(cmd) {
-						eprintln!("Error: Debug channel closed {}", e);
+						eprintln!("Error: Debug channel closed {e:?}");
 						break;
 					}
 				}

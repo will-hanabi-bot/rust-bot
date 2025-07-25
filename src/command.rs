@@ -140,7 +140,7 @@ impl BotClient {
 							None => &game.common,
 							Some(from_name) => match state.player_names.iter().position(|name| name == from_name) {
 								None => {
-									println!("Player {} not found.", from_name);
+									println!("Player {from_name} not found.");
 									return;
 								}
 								Some(index) => &game.players[index]
@@ -167,13 +167,13 @@ impl BotClient {
 							println!("inferred: [{}]", player.str_infs(state, order));
 							println!("possible: [{}]", player.str_poss(state, order));
 							if !flags.is_empty() {
-								println!("flags: {:?}", flags);
+								println!("flags: {flags:?}");
 							}
 							println!("====================");
 						}
 					}
 					else {
-						println!("Player {} not found.", player_name);
+						println!("Player {player_name} not found.");
 					}
 				} else {
 					println!("No active game.");
@@ -230,7 +230,7 @@ impl BotClient {
 				"gameAction" => {
 					match serde_json::from_str::<GameActionMessage>(args) {
 						Ok(action) => self.handle_action(action),
-						Err(e) => println!("Error parsing game action: {}", e),
+						Err(e) => println!("Error parsing game action: {e:?}"),
 					}
 				},
 				"gameActionList" => {
@@ -281,7 +281,7 @@ impl BotClient {
 					send_cmd(&self.ws, "getGameInfo1", &json!({ "tableID": json.table_id }).to_string());
 				},
 				"warning" => {
-					eprintln!("{}", args);
+					eprintln!("{args}");
 				},
 				"welcome" => {
 					let info = serde_json::from_str::<SelfData>(args).unwrap();

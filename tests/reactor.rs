@@ -281,6 +281,32 @@ fn it_understands_a_reverse_reactive_clue() {
 }
 
 #[test]
+fn it_understands_targeting_dupes() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b3", "r4", "r4", "y4", "y5"],
+		&["g4", "g1", "g4", "b4", "b4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		// Bob's slots 2 and 3 are clued with red.
+		init: Box::new(|game: &mut Game| {
+			pre_clue(game, Player::Bob, 2, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Alice }]);
+			pre_clue(game, Player::Bob, 3, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Alice }]);
+		}),
+		..TestOptions::default()
+	});
+
+	// 4 + 2 = 1
+	take_turn(&mut game, "Cathy clues blue to Bob");
+
+	// Alice is called to play slot 4.
+	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][3]].status, &CardStatus::CalledToPlay);
+
+	// Bob is called to discard slot 2.
+	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][1]].status, &CardStatus::CalledToDiscard);
+}
+
+#[test]
 fn it_understands_a_known_delayed_stable_play() {
 	let mut game = util::setup(Arc::new(Reactor), &[
 		&["xx", "xx", "xx", "xx", "xx"],
@@ -333,6 +359,35 @@ fn it_understands_an_unknown_delayed_stable_play() {
 	// We should play our 1 into it as g1.
 	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][0] });
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["g1"]);
+}
+
+#[test]
+fn it_understands_a_response_inversion() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["g1", "y5", "g4", "b4", "b4"],
+		&["b1", "r1", "r4", "y4", "y4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		// Alice has a clued 1 in slot 5.
+		init: Box::new(|game: &mut Game| {
+			pre_clue(game, Player::Alice, 4, &[TestClue { kind: ClueKind::RANK, value: 1, giver: Player::Alice }]);
+		}),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues green to Bob");
+
+	// We are called to discard slot 2.
+	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][1]].status, &CardStatus::CalledToDiscard);
+
+	// Bob is called to play g1.
+	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToPlay);
+
+	let action = game.take_action();
+
+	// We should discard slot 2 urgently.
+	assert_eq!(action, PerformAction::Discard { table_id: Some(0), target: game.state.hands[Player::Alice as usize][1] });
 }
 
 #[test]

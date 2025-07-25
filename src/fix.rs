@@ -33,7 +33,7 @@ pub fn check_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> (Vec<usiz
 	let clued_resets = list.iter().filter(|&order| clue_resets.contains(order)).cloned().collect::<Vec<_>>();
 
 	if !clued_resets.is_empty() {
-		info!("clued cards {:?} were newly reset!", clued_resets);
+		info!("clued cards {clued_resets:?} were newly reset!");
 	}
 
 	let duplicate_reveals = list.iter().filter(|&order| {

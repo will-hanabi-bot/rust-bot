@@ -8,7 +8,7 @@ use std::sync::Arc;
 use super::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
 use crate::basics::card::{CardStatus, ConvData};
 use crate::basics::identity_set::IdentitySet;
-use crate::basics::on_draw;
+use crate::basics::{self, on_draw};
 use crate::basics::player::Link;
 use super::card::{Identifiable, Identity};
 use super::player::Player;
@@ -45,6 +45,7 @@ pub struct Game {
 	pub notes: HashMap<usize, Note>,
 	pub last_move: Option<Interp>,
 	pub queued_cmds: Vec<(String, String)>,
+	pub history: Vec<Game>,
 }
 
 const HAND_SIZE: [usize; 7] = [0, 0, 5, 5, 4, 4, 3];
@@ -73,6 +74,7 @@ impl Game {
 			notes: HashMap::new(),
 			last_move: None,
 			queued_cmds: Vec::new(),
+			history: Vec::new(),
 		}
 	}
 
@@ -83,9 +85,9 @@ impl Game {
 		};
 		let player_thoughts = self.players.iter().map(hash_player).join(",");
 		let common_thoughts = hash_player(&self.common);
-		let action_list = self.state.action_list.iter().map(|action| format!("{:?}", action)).join(",");
+		let action_list = self.state.action_list.iter().map(|action| format!("{action:?}")).join(",");
 
-		format!("{},{},{},{}", state, player_thoughts, common_thoughts, action_list)
+		format!("{state},{player_thoughts},{common_thoughts},{action_list}")
 	}
 
 	pub fn frame(&self) -> Frame {
@@ -101,11 +103,12 @@ impl Game {
 	}
 
 	pub fn handle_action(&mut self, action: &Action) {
+		let prev = &self.clone();
 		self.state.action_list.push(action.clone());
 		match action {
 			Action::Clue(clue) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
-				self.interpret_clue(clue);
+				self.handle_clue(prev, clue);
 
 				for order in &clue.list {
 					self.state.deck[*order].newly_clued = false;
@@ -113,11 +116,15 @@ impl Game {
 			}
 			Action::Discard(discard) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
-				self.interpret_discard(discard);
+
+				basics::on_discard(self, discard);
+				Arc::clone(&self.convention).interpret_discard(prev, self, discard);
 			},
 			Action::Play(play) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
-				self.interpret_play(play);
+
+				basics::on_play(self, play);
+				Arc::clone(&self.convention).interpret_play(prev, self, play);
 			},
 			Action::Draw(draw) => {
 				on_draw(self, draw);
@@ -138,35 +145,21 @@ impl Game {
 				}
 				self.state.turn_count = num + 1;
 
-				self.update_turn(turn);
+				Arc::clone(&self.convention).update_turn(prev, self, turn);
 				self.update_notes();
 			},
 			_ => (),
 		}
 	}
 
-	pub fn interpret_clue(&mut self, action: &ClueAction) {
-		let convention = Arc::clone(&self.convention);
-		convention.interpret_clue(self, action);
-	}
-
-	pub fn interpret_discard(&mut self, action: &DiscardAction) {
-		let convention = Arc::clone(&self.convention);
-		convention.interpret_discard(self, action);
-	}
-
-	pub fn interpret_play(&mut self, action: &PlayAction) {
-		let convention = Arc::clone(&self.convention);
-		convention.interpret_play(self, action);
+	pub fn handle_clue(&mut self, copy: &Game, action: &ClueAction) {
+		basics::on_clue(self, action);
+		basics::elim(self, true);
+		Arc::clone(&self.convention).interpret_clue(copy, self, action);
 	}
 
 	pub fn take_action(&self) -> PerformAction {
 		self.convention.take_action(self)
-	}
-
-	pub fn update_turn(&mut self, action: &TurnAction) {
-		let convention = Arc::clone(&self.convention);
-		convention.update_turn(self, action);
 	}
 
 	pub fn simulate_clean(&self) -> Self {
@@ -186,7 +179,7 @@ impl Game {
 		// log::set_max_level(LevelFilter::Off);
 
 		let mut hypo_game = self.simulate_clean();
-		hypo_game.interpret_clue(action);
+		hypo_game.handle_clue(self, action);
 
 		// log::set_max_level(level);
 
@@ -337,11 +330,11 @@ impl Game {
 }
 
 pub trait Convention {
-	fn interpret_clue(&self, game: &mut Game, action: &ClueAction);
-	fn interpret_discard(&self, game: &mut Game, action: &DiscardAction);
-	fn interpret_play(&self, game: &mut Game, action: &PlayAction);
+	fn interpret_clue(&self, prev: &Game, game: &mut Game, action: &ClueAction);
+	fn interpret_discard(&self, prev: &Game, game: &mut Game, action: &DiscardAction);
+	fn interpret_play(&self, prev: &Game, game: &mut Game, action: &PlayAction);
 	fn take_action(&self, game: &Game) -> PerformAction;
-	fn update_turn(&self, game: &mut Game, action: &TurnAction);
+	fn update_turn(&self, prev: &Game, game: &mut Game, action: &TurnAction);
 
 	fn find_all_clues(&self, game: &Game, player_index: usize) -> Vec<PerformAction>;
 	fn find_all_discards(&self, game: &Game, player_index: usize) -> Vec<PerformAction>;

@@ -4,7 +4,7 @@ use crate::util::Player;
 
 pub fn has_inferences(game: &Game, player_index: Option<Player>, target: Player, slot: usize, inferences: &[&str]) {
 	let Game { common, state, players, .. } = game;
-	let order = state.hands[target as usize].get(slot - 1).unwrap_or_else(|| panic!("Slot {} doesn't exist", slot));
+	let order = state.hands[target as usize].get(slot - 1).unwrap_or_else(|| panic!("Slot {slot} doesn't exist"));
 	let player = player_index.map(|i| &players[i as usize]).unwrap_or(common);
 	let thought = &player.thoughts[*order];
 
@@ -14,7 +14,7 @@ pub fn has_inferences(game: &Game, player_index: Option<Player>, target: Player,
 
 pub fn has_possible(game: &Game, player_index: Option<Player>, target: Player, slot: usize, possible: &[&str]) {
 	let Game { common, state, players, .. } = game;
-	let order = state.hands[target as usize].get(slot - 1).unwrap_or_else(|| panic!("Slot {} doesn't exist", slot));
+	let order = state.hands[target as usize].get(slot - 1).unwrap_or_else(|| panic!("Slot {slot} doesn't exist"));
 	let player = player_index.map(|i| &players[i as usize]).unwrap_or(common);
 	let thought = &player.thoughts[*order];
 

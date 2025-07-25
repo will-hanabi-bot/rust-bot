@@ -1,6 +1,8 @@
+use itertools::Itertools;
 use log::{info, warn};
 use std::mem;
 
+use crate::basics;
 use crate::basics::card::{CardStatus, Identifiable, Identity};
 use crate::basics::clue::ClueKind;
 use crate::basics::game::frame::Frame;
@@ -10,7 +12,7 @@ use crate::basics::util::players_between;
 use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
-use crate::basics::action::{ClueAction};
+use crate::basics::action::{Action, ClueAction};
 
 impl Reactor {
 	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
@@ -33,7 +35,26 @@ impl Reactor {
 		None
 	}
 
-	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
+	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
+		let ClueAction { giver, target, .. } = &action;
+		let interp = Reactor::try_stable(prev, game, action, stall);
+		let bob = game.state.next_player_index(*giver);
+
+		// Check for response inversion
+		if *target != bob && *target != game.state.our_player_index && (interp.is_none() || Reactor::bad_stable(prev, game, action)) {
+			// Overwrite game with prev
+			*game = prev.clone();
+			game.state.action_list.push(Action::Clue(action.clone()));
+			basics::on_clue(game, action);
+			basics::elim(game, true);
+			Reactor::interpret_reactive(prev, game, action, bob)
+		}
+		else {
+			interp
+		}
+	}
+
+	fn try_stable(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
 		info!("interpreting stable clue!");
 		let ClueAction { target, list, clue, .. } = &action;
 		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
@@ -73,17 +94,12 @@ impl Reactor {
 			return Some(ClueInterp::Fix);
 		}
 
-		let Game { common: prev_common, .. } = prev;
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
 
-		// if !state.in_endgame() && !prev_common.thinks_playables(&prev.frame(), *target).is_empty() {
-		// 	warn!("target was already loaded with a playable!");
-		// 	return None;
-		// }
-
+		// Fill-in or hard burn is legal only in a stalling situation
 		if newly_touched.is_empty() {
-			return Some(ClueInterp::Reveal);
+			return stall.then_some(ClueInterp::Reveal);
 		}
 
 		let trash_push = common.order_kt(&frame, *newly_touched.iter().max().unwrap());
@@ -102,7 +118,7 @@ impl Reactor {
 
 		let loaded = common.thinks_loaded(&frame, *target);
 		let reveal = loaded && (clue.kind == ClueKind::RANK || {
-			let prev_playables = prev_common.thinks_playables(&prev.frame(), *target);
+			let prev_playables = prev.common.thinks_playables(&prev.frame(), *target);
 			let curr_playables = common.thinks_playables(&frame, *target);
 
 			// A colour clue that reveals a new playable in a previously touched card
@@ -120,12 +136,34 @@ impl Reactor {
 		}
 		else {
 			info!("rank clue!");
-			Reactor::ref_discard(prev, game, action)
+			Reactor::ref_discard(prev, game, action, stall)
 		}
 	}
 
+	pub(super) fn bad_stable(prev: &Game, game: &Game, action: &ClueAction) -> bool {
+		let Game { common, state, meta, .. } = game;
+		let ClueAction { target, .. } = action;
+
+		let bad_playable = state.hands[*target].iter().find(|&&o|
+			meta[o].status == CardStatus::CalledToPlay && prev.meta[o].status != CardStatus::CalledToPlay && !game.state.has_consistent_inferences(&common.thoughts[o]));
+
+		if let Some(bad) = bad_playable {
+			warn!("bad playable on {bad} {}!", state.log_iden(&state.deck[*bad]));
+			return true;
+		}
+
+		let bad_discard = state.hands[*target].iter().find(|&&o|
+			meta[o].status == CardStatus::CalledToDiscard && prev.meta[o].status != CardStatus::CalledToDiscard && state.is_critical(state.deck[o].id().unwrap()));
+
+		if let Some(bad) = bad_discard {
+			warn!("bad discard on {bad}!");
+			return true;
+		}
+
+		false
+	}
+
 	pub(super) fn interpret_reactive(prev: &Game, game: &mut Game, action: &ClueAction, reacter: usize) -> Option<ClueInterp> {
-		let Game { common: prev_common, .. } = prev;
 		let Game { common, state, meta, .. } = game;
 		let ClueAction { giver, target: receiver, list, clue } = action;
 
@@ -150,25 +188,29 @@ impl Reactor {
 				receiver: *receiver,
 				receiver_hand: state.hands[*receiver].clone(),
 				clue: *clue,
-				focus_slot
+				focus_slot,
+				inverted: false
 			});
 			return Some(ClueInterp::Reactive);
 		}
 
 		match clue.kind {
 			ClueKind::COLOUR => {
-				let known_plays = prev_common.thinks_playables(&prev.frame(), *receiver);
+				let known_plays = prev.common.thinks_playables(&prev.frame(), *receiver);
 				let target = state.hands[*receiver].iter().enumerate().filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())).min();
 
 				match target {
 					None => {
-						let prev_known_trash = prev_common.thinks_trash(&prev.frame(), *receiver);
+						let prev_known_trash = prev.common.thinks_trash(&prev.frame(), *receiver);
 						let known_trash = common.thinks_trash(&Frame::new(state, meta), *receiver);
+
 						let all_trash = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-							!prev_known_trash.contains(o) &&
-							!known_trash.contains(o) &&
-							state.is_basic_trash(state.deck[*o].id().unwrap())
-						).collect::<Vec<_>>();
+							!prev_known_trash.contains(o) && !known_trash.contains(o) &&
+							(state.is_basic_trash(state.deck[*o].id().unwrap()) ||
+								state.hands[*receiver].iter().any(|o2| o2 != o && state.deck[*o].is(&state.deck[*o2])))		// duped in the same hand
+						)
+						.sorted_by_key(|(_, o)| if state.deck[**o].clued { 0 } else { 1 })
+						.collect::<Vec<_>>();
 
 						match all_trash.iter().find(|&(_, o)| state.deck[**o].clued).or_else(|| all_trash.first()) {
 							None => {
@@ -186,7 +228,7 @@ impl Reactor {
 								let react_order = state.hands[reacter][react_slot - 1];
 								let receive_order = **target;
 
-								Reactor::target_play(game, action, react_order, true)?;
+								Reactor::target_play(game, action, react_order, true, false)?;
 								Reactor::target_discard(game, action, receive_order, true);
 								game.meta[receive_order].depends_on = Some(vec![react_order]);
 
@@ -207,7 +249,7 @@ impl Reactor {
 						let receive_order = *target;
 
 						Reactor::target_discard(game, action, react_order, true);
-						Reactor::target_play(game, action, receive_order, false)?;
+						Reactor::target_play(game, action, receive_order, false, false)?;
 						game.meta[receive_order].depends_on = Some(vec![react_order]);
 
 						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
@@ -216,7 +258,7 @@ impl Reactor {
 				}
 			}
 			ClueKind::RANK => {
-				let known_plays = prev_common.thinks_playables(&prev.frame(), *receiver);
+				let known_plays = prev.common.thinks_playables(&prev.frame(), *receiver);
 
 				match state.hands[*receiver].iter().enumerate().filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())).min() {
 					None => {
@@ -240,9 +282,9 @@ impl Reactor {
 								let react_order = state.hands[reacter][react_slot - 1];
 								let receive_order = **finesse_target;
 
-								Reactor::target_play(game, action, react_order, true)?;
+								Reactor::target_play(game, action, react_order, true, false)?;
 								game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
-								Reactor::target_play(game, action, receive_order, false)?;
+								Reactor::target_play(game, action, receive_order, false, false)?;
 								game.meta[receive_order].depends_on = Some(vec![react_order]);
 
 								info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
@@ -262,9 +304,9 @@ impl Reactor {
 						let react_order = state.hands[reacter][react_slot - 1];
 						let receive_order = *target;
 
-						Reactor::target_play(game, action, react_order, true)?;
+						Reactor::target_play(game, action, react_order, true, false)?;
 						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
-						Reactor::target_play(game, action, receive_order, false)?;
+						Reactor::target_play(game, action, receive_order, false, false)?;
 						game.meta[receive_order].depends_on = Some(vec![react_order]);
 
 						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
@@ -293,11 +335,10 @@ impl Reactor {
 			return None;
 		}
 
-		Reactor::target_play(game, action, target, false)?;
-		Some(ClueInterp::RefPlay)
+		Reactor::target_play(game, action, target, false, true)
 	}
 
-	fn target_play(game: &mut Game, action: &ClueAction, target: usize, urgent: bool) -> Option<()> {
+	fn target_play(game: &mut Game, action: &ClueAction, target: usize, urgent: bool, stable: bool) -> Option<ClueInterp> {
 		let ClueAction { giver, target: clue_target, .. } = action;
 
 		// Include possible delayed plays
@@ -342,7 +383,6 @@ impl Reactor {
 		}
 
 		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
-
 		inferred.retain(|i| game.state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i));
 
 		let reset = inferred.is_empty();
@@ -351,8 +391,10 @@ impl Reactor {
 
 		if reset {
 			game.common.thoughts[target].reset_inferences();
-			warn!("target {} was reset!", target);
-			return None;
+			warn!("target {target} was reset!");
+
+			// If the target is fully known trash, this is an acceptable stall.
+			return (stable && game.common.order_kt(&game.frame(), target)).then_some(ClueInterp::Stall);
 		}
 
 		let Game { common, state, .. } = game;
@@ -365,7 +407,7 @@ impl Reactor {
 		}
 
 		info!("targeting play {}, infs {}", target, common.str_infs(state, target));
-		Some(())
+		Some(ClueInterp::RefPlay)
 	}
 
 	fn target_discard(game: &mut Game, _action: &ClueAction, target: usize, urgent: bool) {
@@ -385,14 +427,20 @@ impl Reactor {
 		info!("targeting discard {}, infs {}", target, common.str_infs(state, target));
 	}
 
-	fn ref_discard(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
+	fn ref_discard(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
 		let Game { state, .. } = game;
-		let ClueAction { target: receiver, list, clue, .. } = &action;
+		let ClueAction { target: receiver, list, clue, giver } = &action;
 		let hand = &state.hands[*receiver];
 		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 
 		if let Some(lock_order) = hand.iter().filter(|&&o| !prev.state.deck[o].clued).min() {
+
 			if list.contains(lock_order) {
+				// In a stalling situation, cluing Cathy's lock card is a stall.
+				if stall && state.next_player_index(*receiver) == *giver {
+					info!("stall to Cathy's lock card!");
+					return Some(ClueInterp::Stall);
+				}
 				info!("locked!");
 
 				// Lock pink promise

@@ -65,7 +65,7 @@ impl Identity {
 			let rank = (ord % 5) + 1;
 			Self { suit_index, rank }
 		} else {
-			panic!("Couldn't convert ordinal {} to identity!", ord);
+			panic!("Couldn't convert ordinal {ord} to identity!");
 		}
 	}
 }

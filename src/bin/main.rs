@@ -15,7 +15,7 @@ impl Args {
 			let parts = arg.split('=').collect::<Vec<&str>>();
 
 			if parts.len() != 2 {
-				panic!("Invalid argument {}", arg);
+				panic!("Invalid argument {arg}");
 			}
 
 			let key = parts[0];
@@ -41,8 +41,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 	dotenvy::dotenv()?;
 
-	let username = dotenvy::var(format!("HANABI_USERNAME{}",index))?;
-	let password = dotenvy::var(format!("HANABI_PASSWORD{}",index))?;
+	let username = dotenvy::var(format!("HANABI_USERNAME{index}"))?;
+	let password = dotenvy::var(format!("HANABI_PASSWORD{index}"))?;
 
 	let params = [("username", username), ("password", password), ("version", "bot".to_string())];
 
