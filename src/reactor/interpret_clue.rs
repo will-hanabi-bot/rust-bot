@@ -8,6 +8,7 @@ use crate::basics::clue::ClueKind;
 use crate::basics::game::frame::Frame;
 use crate::basics::game::Game;
 use crate::basics::player::WaitingConnection;
+use crate::basics::state::State;
 use crate::basics::util::players_between;
 use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
@@ -15,6 +16,19 @@ use crate::reactor::{ClueInterp, Reactor};
 use crate::basics::action::{Action, ClueAction};
 
 impl Reactor {
+	fn reactive_focus(state: &State, receiver: usize, action: &ClueAction) -> usize {
+		let ClueAction { list, clue, .. } = &action;
+		let (focus_index, _) = state.hands[receiver].iter().enumerate()
+			.filter(|&(_, o)| list.contains(o))
+			.max_by_key(|&(_, o)| if *o == state.hands[receiver][0] { 0 } else { *o })
+			.unwrap();
+
+		match clue.kind {
+			ClueKind::COLOUR => if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 },
+			ClueKind::RANK => if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 }
+		}
+	}
+
 	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
 		info!("interpreting clue when both players are loaded!");
 		let ClueAction { giver, target, .. } = &action;
@@ -37,6 +51,7 @@ impl Reactor {
 
 	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
 		let ClueAction { giver, target, .. } = &action;
+
 		let interp = Reactor::try_stable(prev, game, action, stall);
 		let bob = game.state.next_player_index(*giver);
 
@@ -44,10 +59,14 @@ impl Reactor {
 		if *target != bob && *target != game.state.our_player_index && (interp.is_none() || Reactor::bad_stable(prev, game, action)) {
 			// Overwrite game with prev
 			*game = prev.clone();
-			game.state.action_list.push(Action::Clue(action.clone()));
+			let Game { state, .. } = game;
+			while state.action_list.len() <= state.turn_count {
+				state.action_list.push(Vec::new());
+			}
+			state.action_list[state.turn_count].push(Action::Clue(action.clone()));
 			basics::on_clue(game, action);
 			basics::elim(game, true);
-			Reactor::interpret_reactive(prev, game, action, bob)
+			Reactor::interpret_reactive(prev, game, action, bob, true)
 		}
 		else {
 			interp
@@ -56,7 +75,7 @@ impl Reactor {
 
 	fn try_stable(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
 		info!("interpreting stable clue!");
-		let ClueAction { target, list, clue, .. } = &action;
+		let ClueAction { target, list, clue, giver } = &action;
 		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
 		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 
@@ -89,6 +108,24 @@ impl Reactor {
 		game.common.good_touch_elim(&frame);
 		game.common.refresh_links(&frame, true);
 
+		// Potential response inversion: don't allow response inversion if there's already a waiting connection
+		if game.common.waiting.is_none() && *target == game.state.our_player_index && game.state.next_player_index(*giver) != *target {
+			let receiver = game.state.our_player_index;
+
+			let focus_slot = Reactor::reactive_focus(&game.state, receiver, action);
+
+			game.common.waiting = Some(WaitingConnection {
+				giver: *giver,
+				reacter: game.state.next_player_index(*giver),
+				receiver,
+				receiver_hand: game.state.our_hand().clone(),
+				clue: *clue,
+				focus_slot,
+				inverted: true,
+				turn: game.state.turn_count
+			});
+		}
+
 		if !clued_resets.is_empty() || !duplicate_reveals.is_empty() {
 			info!("fix clue!");
 			return Some(ClueInterp::Fix);
@@ -102,7 +139,15 @@ impl Reactor {
 			return stall.then_some(ClueInterp::Reveal);
 		}
 
-		let trash_push = common.order_kt(&frame, *newly_touched.iter().max().unwrap());
+		let colour_reveal = clue.kind == ClueKind::COLOUR && {
+			let prev_playables = prev.common.thinks_playables(&prev.frame(), *target);
+			let curr_playables = common.thinks_playables(&frame, *target);
+
+			// A colour clue that reveals a new playable in a previously touched card
+			curr_playables.iter().any(|o| !prev_playables.contains(o) && prev.state.deck[*o].clued)
+		};
+
+		let trash_push = !colour_reveal && common.order_kt(&frame, *newly_touched.iter().max().unwrap());
 		if trash_push {
 			// Brownish TCM if there is at least 1 useful unplayable brown and clue didn't touch chop
 			if state.includes_variant(&BROWNISH) && clue.kind == ClueKind::RANK &&
@@ -117,13 +162,7 @@ impl Reactor {
 		}
 
 		let loaded = common.thinks_loaded(&frame, *target);
-		let reveal = loaded && (clue.kind == ClueKind::RANK || {
-			let prev_playables = prev.common.thinks_playables(&prev.frame(), *target);
-			let curr_playables = common.thinks_playables(&frame, *target);
-
-			// A colour clue that reveals a new playable in a previously touched card
-			curr_playables.iter().any(|o| !prev_playables.contains(o) && prev.state.deck[*o].clued)
-		});
+		let reveal = loaded && (clue.kind == ClueKind::RANK || colour_reveal);
 
 		if reveal {
 			info!("revealed a safe action!");
@@ -163,33 +202,24 @@ impl Reactor {
 		false
 	}
 
-	pub(super) fn interpret_reactive(prev: &Game, game: &mut Game, action: &ClueAction, reacter: usize) -> Option<ClueInterp> {
+	pub(super) fn interpret_reactive(prev: &Game, game: &mut Game, action: &ClueAction, reacter: usize, inverted: bool) -> Option<ClueInterp> {
 		let Game { common, state, meta, .. } = game;
-		let ClueAction { giver, target: receiver, list, clue } = action;
+		let ClueAction { giver, target: receiver, clue, .. } = action;
 
 		info!("interpreting reactive clue!");
 
-		let (focus_index, focus) = state.hands[*receiver].iter().enumerate()
-			.filter(|&(_, o)| list.contains(o))
-			.max_by_key(|&(_, o)| {
-				if *o == state.hands[*receiver][0] { 0 } else { *o }
-			}).unwrap();
+		let focus_slot = Reactor::reactive_focus(state, *receiver, action);
 
 		if *receiver == state.our_player_index {
-			let focus_index = state.hands[*receiver].iter().position(|o| o == focus).unwrap();
-			let focus_slot = match clue.kind {
-				ClueKind::COLOUR => if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 },
-				ClueKind::RANK => if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 }
-			};
-
-			common.waiting.push(WaitingConnection {
+			common.waiting = Some(WaitingConnection {
 				giver: *giver,
 				reacter,
 				receiver: *receiver,
 				receiver_hand: state.hands[*receiver].clone(),
 				clue: *clue,
 				focus_slot,
-				inverted: false
+				inverted: false,
+				turn: state.turn_count
 			});
 			return Some(ClueInterp::Reactive);
 		}
@@ -209,17 +239,16 @@ impl Reactor {
 							(state.is_basic_trash(state.deck[*o].id().unwrap()) ||
 								state.hands[*receiver].iter().any(|o2| o2 != o && state.deck[*o].is(&state.deck[*o2])))		// duped in the same hand
 						)
-						.sorted_by_key(|(_, o)| if state.deck[**o].clued { 0 } else { 1 })
+						.sorted_by_key(|(_, o)| if prev.state.deck[**o].clued { 0 } else { 1 })
 						.collect::<Vec<_>>();
 
-						match all_trash.iter().find(|&(_, o)| state.deck[**o].clued).or_else(|| all_trash.first()) {
+						match all_trash.first() {
 							None => {
 								warn!("Reactive clue but receiver had no playable or trash targets!");
 								None
 							}
 							Some((index, target)) => {
 								let target_slot = index + 1;
-								let focus_slot = if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 };
 								let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 								if react_slot == 0 {
 									react_slot = 5;
@@ -227,6 +256,12 @@ impl Reactor {
 
 								let react_order = state.hands[reacter][react_slot - 1];
 								let receive_order = **target;
+
+								let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
+								if prev_plays.contains(&react_order) {
+									warn!("attempted play+dc would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
+									return None;
+								}
 
 								Reactor::target_play(game, action, react_order, true, false)?;
 								Reactor::target_discard(game, action, receive_order, true);
@@ -239,7 +274,6 @@ impl Reactor {
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
-						let focus_slot = if state.includes_variant(&RAINBOWISH) { clue.value + 1 } else { focus_index + 1 };
 						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 						if react_slot == 0 {
 							react_slot = 5;
@@ -247,6 +281,12 @@ impl Reactor {
 
 						let react_order = state.hands[reacter][react_slot - 1];
 						let receive_order = *target;
+
+						let prev_trash = prev.common.thinks_trash(&prev.frame(), reacter);
+						if prev_trash.contains(&react_order) || (inverted && prev_trash.is_empty() && react_slot == 1) {
+							warn!("attempted dc+play would result in reacter naturally discarding {} {react_order}!", state.log_iden(&state.deck[react_order]));
+							return None;
+						}
 
 						Reactor::target_discard(game, action, react_order, true);
 						Reactor::target_play(game, action, receive_order, false, false)?;
@@ -260,7 +300,15 @@ impl Reactor {
 			ClueKind::RANK => {
 				let known_plays = prev.common.thinks_playables(&prev.frame(), *receiver);
 
-				match state.hands[*receiver].iter().enumerate().filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())).min() {
+				let play_target = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+					!known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())
+				).sorted_by_key(|(i, o)| {
+					// Do not target an unclued copy when there is a clued copy
+					let unclued_dupe = !state.deck[**o].clued && state.hands[*receiver].iter().any(|o2| &o2 != o && state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2]));
+					if unclued_dupe { 99 } else { *i }
+				}).next();
+
+				match play_target {
 					None => {
 						let finesse_targets = state.hands[*receiver].iter().enumerate().filter(|(_, o)|
 							state.playable_away(state.deck[**o].id().unwrap()) == 1
@@ -271,7 +319,6 @@ impl Reactor {
 							return None;
 						}
 
-						let focus_slot = if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 };
 						for react_slot in [1, 5, 4, 3, 2] {
 							let mut target_slot = (focus_slot + 5 - react_slot) % 5;
 							if target_slot == 0 {
@@ -281,6 +328,12 @@ impl Reactor {
 							if let Some((_,finesse_target)) = finesse_targets.iter().find(|(i, _)| i + 1 == target_slot) {
 								let react_order = state.hands[reacter][react_slot - 1];
 								let receive_order = **finesse_target;
+
+								let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
+								if prev_plays.contains(&react_order) {
+									warn!("attempted finesse would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
+									return None;
+								}
 
 								Reactor::target_play(game, action, react_order, true, false)?;
 								game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
@@ -295,7 +348,6 @@ impl Reactor {
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
-						let focus_slot = if state.includes_variant(&PINKISH) { clue.value } else { focus_index + 1 };
 						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 						if react_slot == 0 {
 							react_slot = 5;
@@ -303,6 +355,12 @@ impl Reactor {
 
 						let react_order = state.hands[reacter][react_slot - 1];
 						let receive_order = *target;
+
+						let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
+						if prev_plays.contains(&react_order) {
+							warn!("attempted play+play would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
+							return None;
+						}
 
 						Reactor::target_play(game, action, react_order, true, false)?;
 						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());

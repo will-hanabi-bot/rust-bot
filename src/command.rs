@@ -186,7 +186,7 @@ impl BotClient {
 					}
 					else {
 						let Game { state, .. } = game;
-						let max_turn = state.action_list.iter().filter_map(|action|
+						let max_turn = state.action_list.concat().iter().filter_map(|action|
 							if let Action::Turn(turn) = action { Some(turn.num + 2) } else { None }).max().unwrap_or(0);
 
 						let turn = match nav_arg {
@@ -371,7 +371,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.3.2 (rust-bot)");
+			send_pm(&self.ws, who, "v0.4.0 (rust-bot)");
 		}
 	}
 

@@ -26,7 +26,7 @@ pub struct State {
 	pub play_stacks: Vec<usize>,
 	pub discard_stacks: Vec<Vec<usize>>,
 	pub max_ranks: Vec<usize>,
-	pub action_list: Vec<Action>,
+	pub action_list: Vec<Vec<Action>>,
 	pub current_player_index: usize,
 	pub endgame_turns: Option<usize>,
 	card_count: Vec<usize>,

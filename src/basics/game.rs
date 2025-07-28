@@ -6,13 +6,14 @@ use std::collections::{HashMap};
 use std::sync::Arc;
 
 use super::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
+use crate::basics::action::{DrawAction, InterpAction};
 use crate::basics::card::{CardStatus, ConvData};
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::{self, on_draw};
 use crate::basics::player::Link;
 use super::card::{Identifiable, Identity};
 use super::player::Player;
-use crate::reactor::ReactorInterp;
+use crate::reactor::{ClueInterp, ReactorInterp};
 use super::state::State;
 use super::variant::all_ids;
 use self::frame::Frame;
@@ -38,14 +39,15 @@ pub struct Game {
 	pub players: Vec<Player>,
 	pub common: Player,
 	pub meta: Vec<ConvData>,
-	pub base: (State, Vec<Player>, Player),
+	pub base: (State, Vec<ConvData>, Vec<Player>, Player),
 	pub in_progress: bool,
 	pub catchup: bool,
 	pub convention: Arc<dyn Convention + Send + Sync>,
 	pub notes: HashMap<usize, Note>,
 	pub last_move: Option<Interp>,
 	pub queued_cmds: Vec<(String, String)>,
-	pub history: Vec<Game>,
+	pub next_interp: Option<ClueInterp>,
+	rewind_depth: usize
 }
 
 const HAND_SIZE: [usize; 7] = [0, 0, 5, 5, 4, 4, 3];
@@ -67,14 +69,15 @@ impl Game {
 			players: players.clone(),
 			common: common.clone(),
 			meta: Vec::new(),
-			base: (state, players, common),
+			base: (state, Vec::new(), players, common),
 			in_progress,
 			catchup: false,
 			convention,
 			notes: HashMap::new(),
 			last_move: None,
 			queued_cmds: Vec::new(),
-			history: Vec::new(),
+			next_interp: None,
+			rewind_depth: 0
 		}
 	}
 
@@ -85,7 +88,7 @@ impl Game {
 		};
 		let player_thoughts = self.players.iter().map(hash_player).join(",");
 		let common_thoughts = hash_player(&self.common);
-		let action_list = self.state.action_list.iter().map(|action| format!("{action:?}")).join(",");
+		let action_list = self.state.action_list.concat().iter().map(|action| format!("{action:?}")).join(",");
 
 		format!("{state},{player_thoughts},{common_thoughts},{action_list}")
 	}
@@ -104,7 +107,10 @@ impl Game {
 
 	pub fn handle_action(&mut self, action: &Action) {
 		let prev = &self.clone();
-		self.state.action_list.push(action.clone());
+		while self.state.action_list.len() <= self.state.turn_count {
+			self.state.action_list.push(Vec::new());
+		}
+		self.state.action_list[self.state.turn_count].push(action.clone());
 		match action {
 			Action::Clue(clue) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
@@ -148,6 +154,9 @@ impl Game {
 				Arc::clone(&self.convention).update_turn(prev, self, turn);
 				self.update_notes();
 			},
+			Action::Interp(InterpAction { interp }) => {
+				self.next_interp = Some(interp.clone());
+			}
 			_ => (),
 		}
 	}
@@ -226,41 +235,91 @@ impl Game {
 		hypo_game
 	}
 
-	pub fn navigate(&mut self, turn: usize) -> Self {
+	pub fn rewind(&self, turn: usize, rewind_action: Action) -> Result<Self, String> {
+		if turn < 1 || turn > self.state.action_list.len() + 1 {
+			return Err(format!("Attempted to rewind to invalid turn {turn}!"));
+		}
+
+		info!("{}", format!("Rewinding to insert {rewind_action:?} on turn {turn}!").blue());
+
+		if self.state.action_list[turn].contains(&rewind_action) {
+			return Err("Action was already rewinded!".to_owned());
+		}
+
+		if self.rewind_depth > 2 {
+			return Err("Rewind depth went too deep!".to_owned());
+		}
+
+		info!("{}", "------- STARTING REWIND -------".green());
+
+		let (state, meta, players, common) = &self.base;
+		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
+		new_game.meta = meta.clone();
+		new_game.players = players.clone();
+		new_game.common = common.clone();
+		new_game.catchup = true;
+		new_game.rewind_depth = self.rewind_depth + 1;
+
+		let level = log::max_level();
+		log::set_max_level(LevelFilter::Off);
+
+		for action in self.state.action_list.iter().take(turn).flatten() {
+			match action {
+				Action::Draw(DrawAction { order, player_index, .. }) =>
+					if new_game.state.hands[*player_index].contains(order) {
+						continue;
+					}
+					else {
+						new_game.handle_action(action);
+					},
+				_ => new_game.handle_action(action),
+			}
+		}
+
+		log::set_max_level(level);
+
+		new_game.handle_action(&rewind_action);
+
+		for action in self.state.action_list.iter().skip(turn).flatten() {
+			new_game.handle_action(action);
+		}
+
+		info!("{}", "------- REWIND COMPLETE -------".green());
+		new_game.catchup = self.catchup;
+
+		new_game.notes = self.notes.clone();
+		Ok(new_game)
+	}
+
+	pub fn navigate(&self, turn: usize) -> Self {
 		info!("{}", format!("------- NAVIGATING (turn {turn}) -------").green());
 
-		let (state, players, common) = &self.base;
+		let (state, meta, players, common) = &self.base;
 		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
+		new_game.meta = meta.clone();
 		new_game.players = players.clone();
 		new_game.common = common.clone();
 
 		let actions = &self.state.action_list;
 
 		if turn == 1 && state.our_player_index == 0 {
-			let mut action = &actions[new_game.state.action_list.len()];
-
-			while let Action::Draw(_) = action {
+			for action in actions.concat().iter().take_while(|action| matches!(action, Action::Draw(_))) {
 				new_game.handle_action(action);
-				action = &actions[new_game.state.action_list.len()]
 			}
 		}
 		else {
 			let level = log::max_level();
 			log::set_max_level(LevelFilter::Off);
 
-			while new_game.state.turn_count < turn - 1 {
-				new_game.handle_action(&actions[new_game.state.action_list.len()]);
-			}
-
-			log::set_max_level(level);
-
-			while let Some(action) = actions.get(new_game.state.action_list.len()) {
-				if new_game.state.turn_count < turn {
-					new_game.handle_action(action);
+			for action in actions.concat() {
+				// Turn on logger for the final turn
+				if new_game.state.turn_count == turn - 1 {
+					log::set_max_level(level);
 				}
-				else {
+				else if new_game.state.turn_count == turn {
 					break;
 				}
+				new_game.handle_action(&action);
 			}
 		}
 

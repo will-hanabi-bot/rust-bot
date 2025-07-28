@@ -25,9 +25,6 @@ struct MatchEntry { order: usize, unknown_to: Vec<usize> }
 struct IdEntry { order: usize, player_index: usize }
 
 #[derive(Debug, Clone)]
-struct GTEntry { order: usize, player_index: usize, cm: bool }
-
-#[derive(Debug, Clone)]
 pub struct WaitingConnection {
 	pub giver: usize,
 	pub reacter: usize,
@@ -36,6 +33,7 @@ pub struct WaitingConnection {
 	pub clue: BaseClue,
 	pub focus_slot: usize,
 	pub inverted: bool,
+	pub turn: usize
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +50,7 @@ pub struct Player {
 	pub unknown_plays: HashSet<usize>,
 	pub hypo_plays: HashSet<usize>,
 
-	pub waiting: Vec<WaitingConnection>,
+	pub waiting: Option<WaitingConnection>,
 
 	certain_map: HashMap<Identity, HashMap<usize, Vec<usize>>>,
 	infer_map: HashMap<Identity, Vec<MatchEntry>>,
@@ -72,7 +70,7 @@ impl Player {
 			links: Vec::new(),
 			unknown_plays: HashSet::new(),
 			hypo_plays: HashSet::new(),
-			waiting: Vec::new(),
+			waiting: None,
 
 			certain_map: HashMap::new(),
 			infer_map: HashMap::new(),
@@ -181,7 +179,7 @@ impl Player {
 
 	/** Returns whether the order is globally known trash (either basic trash or already saved). */
 	pub fn order_kt(&self, frame: &Frame, order: usize) -> bool {
-		if frame.meta[order].trash {
+		if frame.meta[order].trash && self.thoughts[order].possible.iter().any(|id| !frame.state.is_critical(id)) {
 			return true;
 		}
 
@@ -216,7 +214,7 @@ impl Player {
 				}
 			}
 
-			if meta[order].status == CardStatus::CalledToPlay {
+			if meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
 				return Some(order);
 			}
 

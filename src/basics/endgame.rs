@@ -21,7 +21,7 @@ mod winnable;
 type WinnableResult = Result<(Vec<PerformAction>, Frac), String>;
 const UNWINNABLE: WinnableResult = Err(String::new());
 
-const MONTE_CARLO: bool = true;
+const MONTE_CARLO: bool = false;
 
 pub fn remove_remaining(remaining: &RemainingMap, id: Identity) -> RemainingMap {
 	let RemainingEntry { missing, .. } = &remaining[&id];
@@ -324,7 +324,7 @@ impl EndgameSolver {
 		}
 
 		let default_clue = PerformAction::Rank { table_id: Some(game.table_id), target: 0, value: 0 };
-		let too_many_clues = game.state.action_list.iter().rev()
+		let too_many_clues = game.state.action_list.concat().iter().rev()
 			.take_while(|action| !matches!(action, Action::Play(_) | Action::Discard(_)))
 			.filter(|action| matches!(action, Action::Clue(_))).count() > game.state.num_players;
 		let clue_winnable = state.clue_tokens > 0 && !too_many_clues && match self.winnable_if(state, player_turn, &default_clue, remaining, 0, deadline) {

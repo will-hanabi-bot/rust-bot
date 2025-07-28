@@ -3,11 +3,14 @@ use crate::basics::identity_set::IdentitySet;
 use crate::basics::variant::{all_ids};
 use crate::basics::card::{IdOptions, Identifiable, Identity, Thought};
 use crate::basics::state::State;
-use super::{IdEntry, GTEntry, Player, Link};
+use super::{IdEntry, Player, Link};
 
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use itertools::Itertools;
-use log::{info};
+use log::info;
+
+#[derive(Debug, Clone)]
+struct GTEntry { order: usize, cm: bool }
 
 impl Player {
 	fn update_map(&mut self, id: Identity, exclude: Vec<usize>) -> (bool, Vec<Identity>) {
@@ -245,10 +248,10 @@ impl Player {
 
 				if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !state.is_basic_trash(i)) {
 					if frame.is_touched(order) {
-						elim_candidates.push(GTEntry { order, player_index: i, cm: false });
+						elim_candidates.push(GTEntry { order, cm: false });
 					}
 					else if meta[order].cm() {
-						elim_candidates.push(GTEntry { order, player_index: i, cm: self.is_common });
+						elim_candidates.push(GTEntry { order, cm: self.is_common });
 					}
 				}
 			}

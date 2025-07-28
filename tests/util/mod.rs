@@ -145,7 +145,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
     (test_options.init)(&mut game);
 
     basics::elim(&mut game, true);
-    game.base = (game.state.clone(), game.players.clone(), game.common.clone());
+    game.base = (game.state.clone(), game.meta.clone(), game.players.clone(), game.common.clone());
 
     game
 }
@@ -319,7 +319,7 @@ fn parse_action(state: &State, action: &str) -> (Action, Option<Identity>) {
 			let failed = parts[1] == "bombs";
 
 			if player_index != state.our_player_index {
-				let draw = (parts.len() < 5 || parts[parts.len() - 2] != "drawing").then(|| state.expand_short(parts[parts.len() - 1]));
+				let draw = (parts.len() >= 5 && parts[parts.len() - 2] == "drawing").then(|| state.expand_short(parts[parts.len() - 1]));
 				let matching = state.hands[player_index].iter().filter(|&&o| state.deck[o].is(&id)).collect::<Vec<_>>();
 				if matching.is_empty() {
 					panic!("Unable to find card {} to discard in {}'s hand", parts[2], player_name);
@@ -357,14 +357,25 @@ pub struct TestClue {
 	pub giver: Player
 }
 
+impl TestClue {
+	pub fn base(&self) -> BaseClue {
+		BaseClue { kind: self.kind, value: self.value }
+	}
+}
+
 pub fn pre_clue(game: &mut Game, player_index: Player, slot: usize, clues: &[TestClue]) {
 	let Game { state, common, .. } = game;
 	let order = state.hands[player_index as usize][slot - 1];
 
-	let possibilities = IdentitySet::from_iter(all_ids(&state.variant).filter(|i| clues.iter().all(|clue| {
-		let base = BaseClue { kind: clue.kind, value: clue.value };
-		id_touched(*i, &state.variant, &base)
-	})));
+	if let Some(id) = state.deck[order].id() {
+		let non_touching = clues.iter().find(|clue| !id_touched(id, &state.variant, &clue.base()));
+
+		if let Some(clue) = non_touching {
+			panic!("Clue {} doesn't touch order {order}!", clue.base().fmt(state, player_index as usize))
+		}
+	}
+
+	let possibilities = IdentitySet::from_iter(all_ids(&state.variant).filter(|i| clues.iter().all(|clue| id_touched(*i, &state.variant, &clue.base()))));
 
 	let thought = &mut common.thoughts[order];
 	thought.inferred = possibilities;

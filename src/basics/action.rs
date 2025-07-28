@@ -1,11 +1,12 @@
-use crate::basics::card::{Identity};
+use crate::basics::card::Identity;
 use crate::basics::{clue::{Clue, ClueKind}, game::Game, state::State, variant::colourable_suits};
+use crate::reactor::ClueInterp;
 
 use super::clue::BaseClue;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusAction {
 	pub clues: usize,
@@ -13,14 +14,14 @@ pub struct StatusAction {
 	pub max_score: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnAction {
 	pub num: usize,
 	pub current_player_index: i32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ClueAction {
 	pub giver: usize,
 	pub target: usize,
@@ -28,7 +29,7 @@ pub struct ClueAction {
 	pub clue: BaseClue
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DrawAction {
 	pub player_index: usize,
@@ -37,7 +38,7 @@ pub struct DrawAction {
 	pub rank: i32
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayAction {
 	pub player_index: usize,
@@ -46,7 +47,7 @@ pub struct PlayAction {
 	pub rank: i32
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscardAction {
 	pub player_index: usize,
@@ -56,7 +57,7 @@ pub struct DiscardAction {
 	pub failed: bool
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StrikeAction {
 	pub num: usize,
@@ -64,14 +65,19 @@ pub struct StrikeAction {
 	pub order: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameOverAction {
 	pub end_condition: usize,
 	pub player_index: usize
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct InterpAction {
+	pub interp: ClueInterp
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type")]
 pub enum Action {
 	#[serde(rename = "status")]
@@ -89,7 +95,8 @@ pub enum Action {
 	#[serde(rename = "strike")]
 	Strike(StrikeAction),
 	#[serde(rename = "gameOver")]
-	GameOver(GameOverAction)
+	GameOver(GameOverAction),
+	Interp(InterpAction)
 }
 
 impl Action {
@@ -119,6 +126,10 @@ impl Action {
 
 	pub fn game_over(end_condition: usize, player_index: usize) -> Self {
 		Action::GameOver(GameOverAction { end_condition, player_index })
+	}
+
+	pub fn interp(interp: ClueInterp) -> Self {
+		Action::Interp(InterpAction { interp })
 	}
 
 	pub fn fmt(&self, state: &State) -> String {
