@@ -9,11 +9,8 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use itertools::Itertools;
 use log::info;
 
-#[derive(Debug, Clone)]
-struct GTEntry { order: usize, cm: bool }
-
 impl Player {
-	fn update_map(&mut self, id: Identity, exclude: Vec<usize>) -> (bool, Vec<Identity>) {
+	fn update_map(&mut self, id: Identity, exclude: Vec<usize>, resets: &mut Vec<usize>) -> (bool, Vec<Identity>) {
 		let mut changed = false;
 		let mut recursive_ids = Vec::new();
 		let mut cross_elim_removals = Vec::new();
@@ -33,11 +30,13 @@ impl Player {
 				thought.inferred.retain(|i| i != id);
 				thought.possible.retain(|i| i != id);
 
-				if thought.possible.is_empty() && !thought.reset {
+				if thought.inferred.is_empty() && !thought.reset {
 					thought.reset_inferences();
+					resets.push(order);
 				}
+
 				// Card can be further eliminated
-				else if thought.possible.len() == 1 {
+				if thought.possible.len() == 1 {
 					let recursive_id = thought.possible.iter().next().unwrap();
 					match self.certain_map.entry(recursive_id) {
 						Entry::Occupied(mut e) => { e.get_mut().insert(order, Vec::new()); },
@@ -61,7 +60,7 @@ impl Player {
 	 * The "typical" empathy operation. If there are enough known instances of an identity, it is removed from every card (including future cards).
 	 * Returns true if at least one card was modified.
 	 */
-	fn basic_card_elim(&mut self, state: &State, ids: &IdentitySet) -> bool {
+	fn basic_card_elim(&mut self, state: &State, ids: &IdentitySet, resets: &mut Vec<usize>) -> bool {
 		let mut changed = false;
 		let mut recursive_ids = IdentitySet::EMPTY;
 		let mut eliminated = IdentitySet::EMPTY;
@@ -71,14 +70,14 @@ impl Player {
 
 			if known_count == state.card_count(id) {
 				eliminated.insert(id);
-				let (inner_changed, inner_recursive_ids) = self.update_map(id, Vec::new());
+				let (inner_changed, inner_recursive_ids) = self.update_map(id, Vec::new(), resets);
 				changed = changed || inner_changed;
 				recursive_ids.extend(&inner_recursive_ids);
 			}
 		}
 
 		if !recursive_ids.is_empty() {
-			self.basic_card_elim(state, &recursive_ids);
+			self.basic_card_elim(state, &recursive_ids, resets);
 		}
 
 		self.all_possible.retain(|i| !eliminated.contains(i));
@@ -92,7 +91,7 @@ impl Player {
 	 * Naked pairs - If Alice has 3 cards with [r4,g5], then everyone knows that both r4 and g5 cannot be elsewhere (will be eliminated in basic_elim).
 	 * Returns true if at least one card was modified.
 	 */
-	fn perform_cross_elim(&mut self, state: &State, entries: &[IdEntry], ids: &IdentitySet) -> bool {
+	fn perform_cross_elim(&mut self, state: &State, entries: &[IdEntry], ids: &IdentitySet, resets: &mut Vec<usize>) -> bool {
 		let mut changed = false;
 		let groups = entries.iter().into_group_map_by(|IdEntry { order, ..}| state.deck[*order].id());
 
@@ -106,7 +105,7 @@ impl Player {
 					continue;
 				}
 
-				let (inner_changed, _) = self.update_map(id, group.iter().map(|g| g.player_index).collect());
+				let (inner_changed, _) = self.update_map(id, group.iter().map(|g| g.player_index).collect(), resets);
 				changed = changed || inner_changed;
 			}
 		}
@@ -117,14 +116,14 @@ impl Player {
 				continue;
 			}
 
-			let (inner_changed, _) = self.update_map(id, entries.iter().map(|e| e.player_index).collect());
+			let (inner_changed, _) = self.update_map(id, entries.iter().map(|e| e.player_index).collect(), resets);
 			changed = changed || inner_changed;
 		}
 
-		self.basic_card_elim(state, ids) || changed
+		self.basic_card_elim(state, ids, resets) || changed
 	}
 
-	fn cross_card_elim(&mut self, state: &State, contained: &Vec<IdEntry>, acc_ids: &IdentitySet, certains: &Vec<usize>, next_index: usize) -> bool {
+	fn cross_card_elim(&mut self, state: &State, contained: &Vec<IdEntry>, acc_ids: &IdentitySet, certains: &Vec<usize>, next_index: usize, resets: &mut Vec<usize>) -> bool {
 		if self.cross_elim_candidates.len() == 1 {
 			return false;
 		}
@@ -137,7 +136,7 @@ impl Player {
 		}
 
 		if contained.len() >= 2 && multiplicity - certains.len() == contained.len() {
-			let inner_changed = self.perform_cross_elim(state, contained, acc_ids);
+			let inner_changed = self.perform_cross_elim(state, contained, acc_ids, resets);
 			if inner_changed {
 				return true;
 			}
@@ -171,16 +170,17 @@ impl Player {
 		}
 		next_certains.retain(|o| !next_contained.iter().any(|e| e.order == *o));
 
-		let included = self.cross_card_elim(state, &next_contained, &new_acc_ids, &next_certains, next_index + 1);
+		let included = self.cross_card_elim(state, &next_contained, &new_acc_ids, &next_certains, next_index + 1, resets);
 		if included {
 			return true;
 		}
 
 		// Check all remaining subsets that skip the next item
-		self.cross_card_elim(state, contained, acc_ids, certains, next_index + 1)
+		self.cross_card_elim(state, contained, acc_ids, certains, next_index + 1, resets)
 	}
 
-	pub fn card_elim(&mut self, state: &State) {
+	pub fn card_elim(&mut self, state: &State) -> Vec<usize> {
+		let mut resets = Vec::new();
 		self.certain_map.clear();
 		self.id_map.clear();
 		self.cross_elim_candidates.clear();
@@ -226,53 +226,46 @@ impl Player {
 		}
 
 		let all_ids = IdentitySet::from_iter(all_ids(&state.variant));
-		self.basic_card_elim(state, &all_ids);
-		while self.cross_card_elim(state, &Vec::new(), &IdentitySet::EMPTY, &Vec::new(), 0) {}
+		self.basic_card_elim(state, &all_ids, &mut resets);
+		while self.cross_card_elim(state, &Vec::new(), &IdentitySet::EMPTY, &Vec::new(), 0, &mut resets) {}
+		resets
 	}
 
-	pub fn good_touch_elim(&mut self, frame: &Frame) {
-		let Frame { state, meta } = frame;
+	pub fn good_touch_elim(&mut self, frame: &Frame) -> Vec<usize> {
 		self.certain_map.clear();
 		self.infer_map.clear();
 		let mut elim_candidates = Vec::new();
+		let mut resets = Vec::new();
 
-		for i in 0..state.num_players {
-			for &order in &state.hands[i] {
-				// self.add_to_maps(frame, order, i);
-
+		for i in 0..frame.state.num_players {
+			for &order in &frame.state.hands[i] {
 				let thought = &self.thoughts[order];
 
-				if meta[order].trash || thought.reset ||  thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
+				if frame.meta[order].trash || thought.reset ||  thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
 					continue;
 				}
 
-				if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !state.is_basic_trash(i)) {
-					if frame.is_touched(order) {
-						elim_candidates.push(GTEntry { order, cm: false });
-					}
-					else if meta[order].cm() {
-						elim_candidates.push(GTEntry { order, cm: self.is_common });
-					}
+				if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !frame.state.is_basic_trash(i)) && frame.is_touched(order) {
+					elim_candidates.push(order);
 				}
 			}
 		}
 
-		let mut all_ids = IdentitySet::from_iter(all_ids(&state.variant));
-		let trash_ids: IdentitySet = all_ids.filter(|i| state.is_basic_trash(i));
+		let mut all_ids = IdentitySet::from_iter(all_ids(&frame.state.variant));
+		let trash_ids: IdentitySet = all_ids.filter(|i| frame.state.is_basic_trash(i));
 		all_ids.retain(|i| !trash_ids.contains(i));
 
 		// Remove all trash identities
-		for &GTEntry { order, cm, .. } in &elim_candidates {
+		for &order in &elim_candidates {
 			let thought = &mut self.thoughts[order];
 			thought.inferred.retain(|i| !trash_ids.contains(i));
 
-			if !cm && thought.inferred.is_empty() && !thought.reset {
+			if thought.inferred.is_empty() && !thought.reset {
 				thought.reset_inferences();
+				resets.push(order);
 			}
 		}
-
-		// self.basic_gt_elim(frame, &all_ids, &elim_candidates);
-		// self.card_elim(state);
+		resets
 	}
 
 	fn elim_link(&mut self, frame: &Frame, matches: &Vec<&usize>, focused_order: &usize, id: Identity, good_touch: bool) {

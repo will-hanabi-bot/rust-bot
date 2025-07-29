@@ -1,7 +1,12 @@
 use std::time::Instant;
 
+#[allow(unused_imports)]
+use colored::Colorize;
 use fraction::ConstOne;
 use itertools::Itertools;
+
+#[allow(unused_imports)]
+use log::info;
 
 use crate::basics::action::PerformAction;
 use crate::basics::card::{Card, Identifiable, Identity};
@@ -217,7 +222,7 @@ impl EndgameSolver {
 			return SimpleResult::Unwinnable;
 		}
 
-		// println!("{}", format!("checking if {} is winning {} {}", action.fmt_s(state, player_turn), state.turn_count, self.simpler_cache.len()).green());
+		// info!("{}", format!("checking if {} is winning {} {}", action.fmt_s(state, player_turn), state.turn_count, self.simpler_cache.len()).green());
 		if state.cards_left == 0 || action.is_clue() {
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, None);
 			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), remaining, depth + 1, deadline);
@@ -271,7 +276,11 @@ impl EndgameSolver {
 			}
 
 			if state.deck.get(new_card_order).and_then(|card| card.base).is_none() {
-				new_state.deck.push(draw.unwrap_or_else(|| Card::new(None, new_card_order, state.turn_count)));
+				let new_card = draw.unwrap_or_else(|| Card::new(None, new_card_order, state.turn_count));
+				match new_state.deck.get_mut(new_card_order) {
+					Some(card) => *card = new_card,
+					None => new_state.deck.push(new_card)
+				}
 			}
 		};
 

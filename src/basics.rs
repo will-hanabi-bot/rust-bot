@@ -1,4 +1,4 @@
-use crate::basics::card::ConvData;
+use crate::basics::card::{CardStatus, ConvData};
 use crate::basics::game::frame::Frame;
 use crate::basics::identity_set::IdentitySet;
 
@@ -46,6 +46,11 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 			thought.inferred = new_inferred;
 			thought.possible = possible.intersect(&new_possible);
 
+			// Write identity if fully known
+			if thought.possible.len() == 1 && card.base.is_none() {
+				card.base = Some(thought.possible.iter().next().unwrap());
+			}
+
 			if new_reasoning {
 				meta[order].reasoning.push(state.turn_count);
 			}
@@ -57,7 +62,6 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 	}
 
 	state.endgame_turns = state.endgame_turns.map(|turns| turns - 1);
-
 	state.clue_tokens -= 1;
 }
 
@@ -104,8 +108,9 @@ pub fn on_draw(game: &mut Game, action: &DrawAction) {
 	let id = (suit_index != -1).then_some(Identity { suit_index: suit_index as usize, rank: rank as usize });
 
 	state.hands[player_index].insert(0, order);
-	if state.deck.get(order).is_none() {
-		state.deck.push(Card::new(id, order, state.turn_count));
+	match state.deck.get_mut(order) {
+		None => state.deck.push(Card::new(id, order, state.turn_count)),
+		Some(card) => *card = Card::new(card.base, order, state.turn_count)
 	}
 	state.card_order = order + 1;
 	state.cards_left -= 1;
@@ -163,12 +168,21 @@ pub fn on_play(game: &mut Game, action: &PlayAction) {
 
 pub fn elim(game: &mut Game, good_touch: bool) {
 	let Game { common, state, players, meta, .. } = game;
+
+	for &order in &state.hands.concat() {
+		if common.thoughts[order].inferred.is_empty() && !common.thoughts[order].reset {
+			common.thoughts[order].reset_inferences();
+			meta[order].status = CardStatus::None;
+		}
+	}
+
 	let frame = Frame::new(state, meta);
 
-	common.card_elim(state);
+	let mut resets = common.card_elim(state);
 	if good_touch {
-		common.good_touch_elim(&frame);
+		resets.extend(common.good_touch_elim(&frame));
 	}
+
 	common.refresh_links(&frame, good_touch);
 	common.update_hypo_stacks(&frame, &[]);
 
@@ -189,5 +203,11 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 
 		player.refresh_links(&frame, good_touch);
 		player.update_hypo_stacks(&frame, &[]);
+	}
+
+	for order in resets {
+		if meta[order].status == CardStatus::CalledToPlay {
+			meta[order].status = CardStatus::None;
+		}
 	}
 }

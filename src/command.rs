@@ -186,8 +186,6 @@ impl BotClient {
 					}
 					else {
 						let Game { state, .. } = game;
-						let max_turn = state.action_list.concat().iter().filter_map(|action|
-							if let Action::Turn(turn) = action { Some(turn.num + 2) } else { None }).max().unwrap_or(0);
 
 						let turn = match nav_arg {
 							NavArg::Turn(turn) => turn,
@@ -197,7 +195,7 @@ impl BotClient {
 							NavArg::PrevRound => state.turn_count.saturating_sub(state.num_players)
 						};
 
-						if turn < 1 || turn > max_turn {
+						if turn < 1 || turn >= state.action_list.len() {
 							error!("Turn {turn} does not exist.");
 						}
 						else {
@@ -371,7 +369,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.4.0 (rust-bot)");
+			send_pm(&self.ws, who, "v0.4.1 (rust-bot)");
 		}
 	}
 

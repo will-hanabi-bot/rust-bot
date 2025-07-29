@@ -11,6 +11,7 @@ use crate::basics::game::{Convention, frame::Frame, Game, Interp};
 use crate::basics::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
 use crate::basics::player::WaitingConnection;
 use crate::basics::util;
+use crate::fix::check_fix;
 
 mod interpret_clue;
 mod state_eval;
@@ -52,7 +53,7 @@ impl Convention for Reactor {
 				let player_index = (giver + i) % game.state.num_players;
 
 				// The clue may reveal a new playable, or the clue may fix a bad-touched card that looked playable previously
-				let old_playables = prev.common.thinks_playables(&game.frame(), player_index);
+				let old_playables = prev.common.thinks_playables(&prev.frame(), player_index);
 				let new_playables = game.common.thinks_playables(&game.frame(), player_index);
 				let playables = old_playables.iter().filter(|o| new_playables.contains(o)).collect::<Vec<_>>();
 
@@ -66,14 +67,25 @@ impl Convention for Reactor {
 				}
 			}
 
+			let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
+			let allowable_fix = *target == game.state.next_player_index(*giver) && (!clued_resets.is_empty() || !duplicate_reveals.is_empty());
+
 			match reacter {
-				None => Reactor::interpret_fix(prev, game, action),
+				None => (allowable_fix).then_some(ClueInterp::Fix),
 				Some(reacter) => {
 					if &reacter == target {
 						Reactor::interpret_stable(prev, game, action, false)
 					}
 					else {
-						Reactor::interpret_reactive(prev, game, action, reacter, false)
+						let prev_playables = prev.players[*target].thinks_playables(&prev.frame(), *target);
+
+						// Urgent fix on previous playable
+						if allowable_fix && clued_resets.iter().chain(duplicate_reveals.iter()).any(|o| prev_playables.contains(o)) {
+							Some(ClueInterp::Fix)
+						}
+						else {
+							Reactor::interpret_reactive(prev, game, action, reacter, false)
+						}
 					}
 				}
 			}

@@ -32,6 +32,13 @@ pub struct Note {
 	pub full: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SimOpts {
+	pub free: bool,
+	pub log: bool,
+	pub no_recurse: bool,
+}
+
 #[derive(Clone)]
 pub struct Game {
 	pub table_id: u32,
@@ -47,6 +54,7 @@ pub struct Game {
 	pub last_move: Option<Interp>,
 	pub queued_cmds: Vec<(String, String)>,
 	pub next_interp: Option<ClueInterp>,
+	pub no_recurse: bool,
 	rewind_depth: usize
 }
 
@@ -77,8 +85,20 @@ impl Game {
 			last_move: None,
 			queued_cmds: Vec::new(),
 			next_interp: None,
+			no_recurse: false,
 			rewind_depth: 0
 		}
+	}
+
+	pub fn blank(&self) -> Self {
+		let (state, meta, players, common) = &self.base;
+		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
+		// Copy over the deck, so that information about future cards is preserved
+		new_game.state.deck = self.state.deck.clone();
+		new_game.meta = meta.clone();
+		new_game.players = players.clone();
+		new_game.common = common.clone();
+		new_game
 	}
 
 	pub fn hash(&self) -> String {
@@ -174,7 +194,6 @@ impl Game {
 	pub fn simulate_clean(&self) -> Self {
 		let mut hypo_game = self.clone();
 		hypo_game.catchup = true;
-		// Don't rewind
 		for hand in &self.state.hands {
 			for &order in hand {
 				hypo_game.state.deck[order].newly_clued = false;
@@ -183,14 +202,26 @@ impl Game {
 		hypo_game
 	}
 
-	pub fn simulate_clue(&self, action: &ClueAction) -> Self {
-		// let level = log::max_level();
-		// log::set_max_level(LevelFilter::Off);
+	pub fn simulate_clue(&self, action: &ClueAction, options: SimOpts) -> Self {
+		let level = log::max_level();
+
+		if !options.log {
+			log::set_max_level(LevelFilter::Off);
+		}
 
 		let mut hypo_game = self.simulate_clean();
-		hypo_game.handle_clue(self, action);
 
-		// log::set_max_level(level);
+		if options.free {
+			hypo_game.state.clue_tokens += 1;
+		}
+		if options.no_recurse {
+			hypo_game.no_recurse = true;
+		}
+
+		let copy = if !options.free { self } else { &hypo_game.clone() };
+		hypo_game.handle_clue(copy, action);
+
+		log::set_max_level(level);
 
 		hypo_game.catchup = false;
 		hypo_game.state.turn_count += 1;
@@ -252,11 +283,7 @@ impl Game {
 
 		info!("{}", "------- STARTING REWIND -------".green());
 
-		let (state, meta, players, common) = &self.base;
-		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
-		new_game.meta = meta.clone();
-		new_game.players = players.clone();
-		new_game.common = common.clone();
+		let mut new_game = self.blank();
 		new_game.catchup = true;
 		new_game.rewind_depth = self.rewind_depth + 1;
 
@@ -265,19 +292,13 @@ impl Game {
 
 		for action in self.state.action_list.iter().take(turn).flatten() {
 			match action {
-				Action::Draw(DrawAction { order, player_index, .. }) =>
-					if new_game.state.hands[*player_index].contains(order) {
-						continue;
-					}
-					else {
-						new_game.handle_action(action);
-					},
+				Action::Draw(DrawAction { order, player_index, .. })
+					if new_game.state.hands[*player_index].contains(order) => continue,
 				_ => new_game.handle_action(action),
 			}
 		}
 
 		log::set_max_level(level);
-
 		new_game.handle_action(&rewind_action);
 
 		for action in self.state.action_list.iter().skip(turn).flatten() {
@@ -294,15 +315,10 @@ impl Game {
 	pub fn navigate(&self, turn: usize) -> Self {
 		info!("{}", format!("------- NAVIGATING (turn {turn}) -------").green());
 
-		let (state, meta, players, common) = &self.base;
-		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
-		new_game.meta = meta.clone();
-		new_game.players = players.clone();
-		new_game.common = common.clone();
-
+		let mut new_game = self.blank();
 		let actions = &self.state.action_list;
 
-		if turn == 1 && state.our_player_index == 0 {
+		if turn == 1 && new_game.state.our_player_index == 0 {
 			for action in actions.concat().iter().take_while(|action| matches!(action, Action::Draw(_))) {
 				new_game.handle_action(action);
 			}
@@ -325,7 +341,7 @@ impl Game {
 
 		new_game.catchup = self.catchup;
 
-		if !new_game.catchup && new_game.state.current_player_index == state.our_player_index {
+		if !new_game.catchup && new_game.state.current_player_index == new_game.state.our_player_index {
 			let perform = new_game.take_action();
 			info!("{}", format!("Suggested action: {}", perform.fmt(&new_game)).blue());
 		}
@@ -346,6 +362,10 @@ impl Game {
 			}
 
 			let mut note: String = frame.get_note(common, order);
+			if note.is_empty() {
+				continue;
+			}
+
 			let link_note = common.links.iter().filter_map(|link| match link {
 				Link::Promised { orders, id, .. } => orders.contains(&order).then_some(state.log_id(*id)),
 				_ => None,

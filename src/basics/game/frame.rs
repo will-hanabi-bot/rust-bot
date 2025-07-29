@@ -11,14 +11,14 @@ impl<'a> Frame<'a> {
 	}
 
 	pub fn is_touched(&self, order: usize) -> bool {
-		let Frame { state, meta, .. } = self;
+		let Frame { state, meta } = self;
 		let ConvData { status, .. } = meta[order];
 
 		state.deck[order].clued || status == CardStatus::Finessed || status == CardStatus::CalledToPlay
 	}
 
 	pub fn is_blind_playing(&self, order: usize) -> bool {
-		let Frame { state, meta, .. } = self;
+		let Frame { state, meta } = self;
 		let ConvData { status, .. } = meta[order];
 
 		!state.deck[order].clued && (status == CardStatus::Finessed || status == CardStatus::CalledToPlay)
@@ -29,6 +29,8 @@ impl<'a> Frame<'a> {
 
 		let note = if thought.inferred.is_empty() {
 			"??".to_string()
+		} else if thought.inferred == thought.possible {
+			String::new()
 		} else if thought.inferred.len() <= 6 {
 			common.str_infs(self.state, order)
 		} else {
@@ -37,10 +39,10 @@ impl<'a> Frame<'a> {
 
 		match self.meta[order].status {
 			CardStatus::Finessed | CardStatus::CalledToPlay => {
-				format!("[f] [{note}]")
+				format!("[f]{}", if note.is_empty() { String::new() } else { format!(" [{note}]") })
 			}
 			CardStatus::ChopMoved => {
-				format!("[cm] [{note}]")
+				format!("[cm]{}", if note.is_empty() { String::new() } else { format!(" [{note}]") })
 			}
 			CardStatus::CalledToDiscard => {
 				"dc".to_string()

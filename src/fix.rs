@@ -1,65 +1,29 @@
-use log::info;
-use std::collections::HashSet;
-
 use crate::basics::action::{Action, ClueAction};
-use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions};
-use crate::basics::game::{frame::Frame, Game};
-use crate::basics::util::visible_find;
+use crate::basics::card::{IdOptions, Identifiable, Identity, MatchOptions};
+use crate::basics::game::{Game};
 
-pub fn check_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> (Vec<usize>, Vec<usize>) {
-	let ClueAction { clue, list, target, .. } = action;
-	let Game { common: old_common, .. } = prev;
+pub fn check_fix(prev: &Game, game: &Game, action: &ClueAction) -> (Vec<usize>, Vec<usize>) {
+	let ClueAction { list, .. } = action;
 	let Game { common, state, .. } = game;
 
-	let mut clue_resets: HashSet<usize> = HashSet::new();
+	let mut clued_resets = Vec::new();
+	let mut duplicate_reveals = Vec::new();
 
-	for order in &state.hands[*target] {
-		let old_thought = &old_common.thoughts[*order];
-		let thought = &common.thoughts[*order];
+	for &order in list {
+		let duplicated = prev.state.deck[order].clued && list.iter().any(|&o|
+			o != order &&
+			prev.state.deck[o].clued &&
+			state.deck[order].is(&state.deck[o]) &&
+			!prev.common.thoughts[order].matches(&prev.common.thoughts[o], &MatchOptions { infer: true, ..Default::default() })
+		);
 
-		// TODO: pink fix
-		let clued_reset = !old_thought.inferred.is_empty() && thought.inferred.is_empty();
-
-		if clued_reset {
-			clue_resets.insert(*order);
-			common.thoughts[*order].reset_inferences();
-			game.meta[*order].status = CardStatus::None;
+		if !prev.common.thoughts[order].reset && common.thoughts[order].reset {
+			clued_resets.push(order);
+		}
+		else if duplicated {
+			duplicate_reveals.push(order);
 		}
 	}
-
-	// refresh links
-	// cancel waiting connections, undo elims
-
-	let clued_resets = list.iter().filter(|&order| clue_resets.contains(order)).cloned().collect::<Vec<_>>();
-
-	if !clued_resets.is_empty() {
-		info!("clued cards {clued_resets:?} were newly reset!");
-	}
-
-	let duplicate_reveals = list.iter().filter(|&order| {
-		let old_thought = &old_common.thoughts[*order];
-		let thought = &common.thoughts[*order];
-		if thought.possible.len() == old_thought.possible.len() {
-			return false;
-		}
-
-		// No-info clue
-		if state.deck[*order].clues.iter().filter(|&cl| cl == clue).count() > 1 {
-			return false;
-		}
-
-		if let Some(id) = thought.identity(&Default::default()) {
-			let frame = Frame::new(state, &game.meta);
-			let copy = visible_find(state, common, id, MatchOptions { infer: true, ..Default::default() }, |player_index, o|
-				player_index == *target && frame.is_touched(o) && o != *order);
-
-			if !copy.is_empty() {
-				info!("same-hand duplicate {} revealed! copy of order {}", state.log_id(id), copy[0]);
-				return true;
-			}
-		}
-		false
-	}).cloned().collect::<Vec<_>>();
 
 	(clued_resets, duplicate_reveals)
 }

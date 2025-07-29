@@ -4,7 +4,7 @@ use std::mem;
 
 use crate::basics;
 use crate::basics::card::{CardStatus, Identifiable, Identity};
-use crate::basics::clue::ClueKind;
+use crate::basics::clue::{Clue, ClueKind};
 use crate::basics::game::frame::Frame;
 use crate::basics::game::Game;
 use crate::basics::player::WaitingConnection;
@@ -29,26 +29,6 @@ impl Reactor {
 		}
 	}
 
-	pub(super) fn interpret_fix(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
-		info!("interpreting clue when both players are loaded!");
-		let ClueAction { giver, target, .. } = &action;
-		let Game { state, .. } = game;
-
-		if state.next_player_index(*giver) != *target {
-			info!("target is not the next player!");
-			return None;
-		}
-
-		let (clued_resets, duplicate_reveals) = check_fix(prev, game, action);
-		let prev_playables = prev.players[*target].thinks_playables(&prev.frame(), *target);
-		if clued_resets.iter().chain(duplicate_reveals.iter()).any(|o| prev_playables.contains(o)) {
-			info!("fix clue!");
-			return Some(ClueInterp::Fix);
-		}
-		info!("not an urgent fix clue, not interpreting");
-		None
-	}
-
 	pub(super) fn interpret_stable(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
 		let ClueAction { giver, target, .. } = &action;
 
@@ -56,7 +36,7 @@ impl Reactor {
 		let bob = game.state.next_player_index(*giver);
 
 		// Check for response inversion
-		if *target != bob && *target != game.state.our_player_index && (interp.is_none() || Reactor::bad_stable(prev, game, action)) {
+		if *target != bob && *target != game.state.our_player_index && (interp.is_none() || Reactor::bad_stable(prev, game, action, interp.as_ref().unwrap(), stall)) {
 			// Overwrite game with prev
 			*game = prev.clone();
 			let Game { state, .. } = game;
@@ -133,10 +113,19 @@ impl Reactor {
 
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
+		let loaded = common.thinks_loaded(&frame, *target);
 
 		// Fill-in or hard burn is legal only in a stalling situation
 		if newly_touched.is_empty() {
-			return stall.then_some(ClueInterp::Reveal);
+			if loaded {
+				info!("revealed a safe action!");
+				return Some(ClueInterp::Reveal);
+			}
+			if stall {
+				info!("stalling with fill-in/hard-burn!");
+				return Some(ClueInterp::Stall);
+			}
+			return None;
 		}
 
 		let colour_reveal = clue.kind == ClueKind::COLOUR && {
@@ -161,7 +150,6 @@ impl Reactor {
 			}
 		}
 
-		let loaded = common.thinks_loaded(&frame, *target);
 		let reveal = loaded && (clue.kind == ClueKind::RANK || colour_reveal);
 
 		if reveal {
@@ -179,7 +167,46 @@ impl Reactor {
 		}
 	}
 
-	pub(super) fn bad_stable(prev: &Game, game: &Game, action: &ClueAction) -> bool {
+	fn alternative_clue(game: &Game, action: &ClueAction) -> Option<Clue>{
+		let Game { common, state,  .. } = game;
+		let ClueAction { target, .. } = action;
+
+		if game.no_recurse {
+			return None;
+		}
+
+		state.all_valid_clues(*target).iter().find(|clue| {
+			let base_clue = clue.to_base();
+			let list = state.clue_touched(&state.hands[*target], &base_clue);
+
+			let hand = &state.hands[*target];
+			let newly_touched = list.iter().filter(|&&o| !state.deck[o].clued).copied().collect::<Vec<_>>();
+
+			if newly_touched.is_empty() {
+				return false;
+			}
+
+			match clue.kind {
+				ClueKind::COLOUR => {
+					let play_target = newly_touched.iter().map(|&o| common.refer(&game.frame(), hand, o, true)).max().unwrap();
+					state.is_playable(state.deck[play_target].id().unwrap())
+				}
+				ClueKind::RANK => {
+					if let Some(lock_order) = hand.iter().filter(|&&o| !state.deck[o].clued).min() && list.contains(lock_order) {
+						return false;
+					}
+
+					let focus = newly_touched.iter().max().unwrap();
+					let focus_pos = hand.iter().position(|o| o == focus).unwrap();
+					let target_index = hand.iter().enumerate().position(|(i, &o)| i > focus_pos && !state.deck[o].clued).unwrap();
+
+					state.is_basic_trash(state.deck[hand[target_index]].id().unwrap())
+				}
+			}
+		}).copied()
+	}
+
+	pub(super) fn bad_stable(prev: &Game, game: &Game, action: &ClueAction, interp: &ClueInterp, stall: bool) -> bool {
 		let Game { common, state, meta, .. } = game;
 		let ClueAction { target, .. } = action;
 
@@ -197,6 +224,26 @@ impl Reactor {
 		if let Some(bad) = bad_discard {
 			warn!("bad discard on {bad}!");
 			return true;
+		}
+
+		// Check for bad lock
+		if *interp == ClueInterp::Lock {
+			if let Some(alt_clue) = Reactor::alternative_clue(game, action) {
+				warn!("alternative clue {} was available!", alt_clue.fmt(state));
+				return true;
+			}
+		}
+
+		if !stall {
+			return false;
+		}
+
+		// Check for bad stall
+		if *interp == ClueInterp::Stall {
+			if let Some(alt_clue) = Reactor::alternative_clue(game, action) {
+				warn!("alternative clue {} was available!", alt_clue.fmt(state));
+				return true;
+			}
 		}
 
 		false
@@ -248,10 +295,20 @@ impl Reactor {
 								None
 							}
 							Some((index, target)) => {
+								if state.next_player_index(*giver) != reacter && meta[**target].status == CardStatus::CalledToPlay {
+									warn!("can't target previously-playable trash with a reverse reactive clue!");
+									return None;
+								}
+
 								let target_slot = index + 1;
 								let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 								if react_slot == 0 {
 									react_slot = 5;
+								}
+
+								if state.hands[reacter].get(react_slot - 1).is_none() {
+									warn!("Reacter doesn't have slot {react_slot}!");
+									return None;
 								}
 
 								let react_order = state.hands[reacter][react_slot - 1];
@@ -277,6 +334,11 @@ impl Reactor {
 						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 						if react_slot == 0 {
 							react_slot = 5;
+						}
+
+						if state.hands[reacter].get(react_slot - 1).is_none() {
+							warn!("Reacter doesn't have slot {react_slot}!");
+							return None;
 						}
 
 						let react_order = state.hands[reacter][react_slot - 1];
@@ -325,6 +387,11 @@ impl Reactor {
 								target_slot = 5;
 							}
 
+							if state.hands[reacter].get(react_slot - 1).is_none() {
+								warn!("Reacter doesn't have slot {react_slot}!");
+								return None;
+							}
+
 							if let Some((_,finesse_target)) = finesse_targets.iter().find(|(i, _)| i + 1 == target_slot) {
 								let react_order = state.hands[reacter][react_slot - 1];
 								let receive_order = **finesse_target;
@@ -351,6 +418,11 @@ impl Reactor {
 						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
 						if react_slot == 0 {
 							react_slot = 5;
+						}
+
+						if state.hands[reacter].get(react_slot - 1).is_none() {
+							warn!("Reacter doesn't have slot {react_slot}!");
+							return None;
 						}
 
 						let react_order = state.hands[reacter][react_slot - 1];
@@ -447,7 +519,7 @@ impl Reactor {
 		game.common.thoughts[target].inferred = inferred;
 		game.common.thoughts[target].info_lock = Some(inferred);
 
-		if reset {
+		if reset || !game.state.has_consistent_inferences(&game.common.thoughts[target]) {
 			game.common.thoughts[target].reset_inferences();
 			warn!("target {target} was reset!");
 
@@ -491,31 +563,28 @@ impl Reactor {
 		let hand = &state.hands[*receiver];
 		let newly_touched = list.iter().filter(|&&o| !prev.state.deck[o].clued).copied().collect::<Vec<_>>();
 
-		if let Some(lock_order) = hand.iter().filter(|&&o| !prev.state.deck[o].clued).min() {
-
-			if list.contains(lock_order) {
-				// In a stalling situation, cluing Cathy's lock card is a stall.
-				if stall && state.next_player_index(*receiver) == *giver {
-					info!("stall to Cathy's lock card!");
-					return Some(ClueInterp::Stall);
-				}
-				info!("locked!");
-
-				// Lock pink promise
-				if clue.kind == ClueKind::RANK && state.includes_variant(&PINKISH) {
-					game.common.thoughts[*lock_order].inferred.retain(|i| i.rank == clue.value);
-					game.meta[*lock_order].focused = true;
-				}
-
-				for &order in hand {
-					let meta = &mut game.meta[order];
-
-					if !state.deck[order].clued && meta.status == CardStatus::None {
-						meta.status = CardStatus::ChopMoved;
-					}
-				}
-				return Some(ClueInterp::Lock);
+		if let Some(lock_order) = hand.iter().filter(|&&o| !prev.state.deck[o].clued).min() && list.contains(lock_order) {
+			// In a stalling situation, cluing Cathy's lock card is a stall.
+			if stall && state.next_player_index(*receiver) == *giver {
+				info!("stall to Cathy's lock card!");
+				return Some(ClueInterp::Stall);
 			}
+			info!("locked!");
+
+			// Lock pink promise
+			if clue.kind == ClueKind::RANK && state.includes_variant(&PINKISH) {
+				game.common.thoughts[*lock_order].inferred.retain(|i| i.rank == clue.value);
+				game.meta[*lock_order].focused = true;
+			}
+
+			for &order in hand {
+				let meta = &mut game.meta[order];
+
+				if !state.deck[order].clued && meta.status == CardStatus::None {
+					meta.status = CardStatus::ChopMoved;
+				}
+			}
+			return Some(ClueInterp::Lock);
 		}
 
 		let focus = newly_touched.iter().max().unwrap();

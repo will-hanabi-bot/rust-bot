@@ -1,5 +1,6 @@
 use log::{info, warn};
 
+use crate::basics::game::SimOpts;
 use crate::reactor::{ClueInterp, Reactor, ReactorInterp};
 use crate::basics::action::{Action, DiscardAction, PlayAction};
 use crate::basics::card::{CardStatus, Identifiable, Identity};
@@ -76,7 +77,7 @@ impl Reactor {
 
 	fn advance_game(game: &Game, action: &Action) -> Game {
 		match action {
-			Action::Clue(clue) => game.simulate_clue(clue),
+			Action::Clue(clue) => game.simulate_clue(clue, SimOpts { log: true, ..SimOpts::default() }),
 			_ => game.simulate_action(action)
 		}
 	}
@@ -110,13 +111,18 @@ impl Reactor {
 		let trash = game.players[player_index].thinks_trash(&frame, player_index);
 		let urgent_dc = trash.iter().find(|o| meta[**o].urgent);
 
-		let mut playables = game.players[player_index].thinks_playables(&frame, player_index);
-		if urgent_dc.is_none() && !playables.is_empty() {
-			// Only consider playing the leftmost of similarly-possible cards
-			let playables_clone = playables.clone();
-			playables.retain(|&o| {
-				!playables_clone.iter().any(|&p| p > o && common.thoughts[p].possible == common.thoughts[o].possible)
-			});
+		let all_playables = game.players[player_index].thinks_playables(&frame, player_index);
+		if urgent_dc.is_none() && !all_playables.is_empty() {
+			let urgent_play = all_playables.iter().find(|o| meta[**o].urgent);
+
+			let playables = match urgent_play {
+				Some(order) => vec![*order],
+				None => all_playables.iter().filter(|&&o|
+						// Only consider playing the leftmost of similarly-possible cards
+						!all_playables.iter().any(|&p| p > o && common.thoughts[p].possible == common.thoughts[o].possible)
+					).copied().collect::<Vec<_>>(),
+			};
+
 			let play_actions = playables.iter().map(|&order| {
 				let (id, action) = match state.deck[order].id() {
 					None => {

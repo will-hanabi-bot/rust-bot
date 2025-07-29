@@ -1,6 +1,5 @@
 use colored::Colorize;
 use fraction::{ConstOne, ConstZero, GenericFraction};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use itertools::Itertools;
@@ -21,7 +20,7 @@ mod winnable;
 type WinnableResult = Result<(Vec<PerformAction>, Frac), String>;
 const UNWINNABLE: WinnableResult = Err(String::new());
 
-const MONTE_CARLO: bool = false;
+const MONTE_CARLO: bool = true;
 
 pub fn remove_remaining(remaining: &RemainingMap, id: Identity) -> RemainingMap {
 	let RemainingEntry { missing, .. } = &remaining[&id];
@@ -157,6 +156,16 @@ impl EndgameSolver {
 				return Err("timed out".to_string());
 			}
 			all_arrangements = all_arrangements.iter().flat_map(expand_arr).collect();
+		}
+
+		for arr in &mut all_arrangements {
+			assert_eq!(arr.remaining.values().map(|a| a.missing).sum::<usize>(), state.cards_left)
+		}
+
+		// Normalize all probabilities: some of the potential generated ones may be impossible, so the total prob may be less than 1.
+		let sum_prob = all_arrangements.iter().map(|a| a.prob).sum::<GenericFraction<u64>>();
+		for arr in &mut all_arrangements {
+			arr.prob /= sum_prob;
 		}
 
 		let mut arrangements = if MONTE_CARLO {
@@ -302,7 +311,7 @@ impl EndgameSolver {
 
 			match state.deck[order].id() {
 				None => {
-					info!("can't identify {order}");
+					info!("can't identify {order} {:?}", game.players[player_turn].thoughts[order]);
 					continue;
 				},
 				Some(_) => {
@@ -398,11 +407,9 @@ impl EndgameSolver {
 			let hypo_games = if perform.is_clue() { &undrawn } else { &drawn };
 
 			for GameArr { game, prob, remaining, drew } in hypo_games {
-				if let Some(id) = drew {
+				if let Some(id) = drew && !winnable_draws.contains(id) {
 					// Drew an unwinnable identity
-					if !winnable_draws.contains(id) {
-						continue;
-					}
+					continue;
 				}
 
 				let new_game = EndgameSolver::advance_game(game, player_turn, &perform);
@@ -420,9 +427,10 @@ impl EndgameSolver {
 						new_game.state.endgame_turns);
 				}
 				else {
-					info!("{}drawing {} after {} {} cards_left {} endgame_turns {:?} {{",
+					info!("{}drawing {} ({}) after {} {} cards_left {} endgame_turns {:?} {{",
 						(0..depth).map(|_| "  ").join(""),
 						new_game.state.log_oid(drew),
+						new_game.state.hands[player_turn][0],
 						perform.fmt_s(&game.state, player_turn),
 						new_game.state.hands[player_turn].iter().map(|&o| new_game.state.log_iden(&new_game.state.deck[o])).join(","),
 						new_game.state.cards_left,
@@ -504,11 +512,12 @@ impl EndgameSolver {
 		}
 
 		let mut drawn = Vec::new();
+		assert_eq!(remaining.values().map(|r| r.missing).sum::<usize>(), state.cards_left);
 
 		for (id, RemainingEntry { missing, .. }) in remaining {
 			let mut new_game = game.clone();
 			assert_eq!(new_game.state.deck.len(), state.card_order);
-			new_game.state.deck.push(Card::new(Some(*id), state.card_order + 1, state.turn_count));
+			new_game.state.deck.push(Card::new(Some(*id), state.card_order, state.turn_count));
 
 			let new_remaining = remove_remaining(remaining, *id);
 			drawn.push(GameArr { game: new_game, prob: Frac::new(*missing as u64, state.cards_left as u64), remaining: new_remaining, drew: Some(*id) });
@@ -532,52 +541,40 @@ fn find_remaining_ids(game: &Game) -> (RemainingMap, Vec<(usize, Option<Identity
 	let Game { state, .. } = game;
 	let mut seen_ids = HashMap::new();
 	let mut own_ids: Vec<(usize, Option<Identity>)> = Vec::new();
+	let mut infer_ids: HashMap<Identity, Vec<usize>> = HashMap::new();
 
-	// Identify all the cards we know for sure
 	for i in 0..state.num_players {
 		for &order in &state.hands[i] {
+			// Identify all the cards we know for sure
 			if let Some(id) = game.me().thoughts[order].id() {
 				seen_ids.entry(id).and_modify(|e| *e += 1).or_insert(1);
 
 				if i == state.our_player_index {
 					own_ids.push((order, Some(id)));
 				}
-			} else if i == state.our_player_index {
-				own_ids.push((order, None));
 			}
-		}
-	}
-
-	let mut infer_ids: HashMap<Identity, Vec<usize>> = HashMap::new();
-
-	// Identify any remaining inferred ids
-	for &(order, id) in &own_ids {
-		if id.is_some() {
-			continue;
-		}
-
-		if let Some(id) = game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
-			infer_ids.entry(id).and_modify(|e| e.push(order)).or_insert(vec![order]);
+			else if i == state.our_player_index {
+				match game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
+					Some(id) => {
+						infer_ids.entry(id).and_modify(|e| e.push(order)).or_insert(vec![order]);
+					}
+					None => own_ids.push((order, None))
+				}
+			}
 		}
 	}
 
 	// Check that the inferred ids don't add up to too many
 	for (id, orders) in infer_ids {
-		match seen_ids.entry(id) {
-			Entry::Occupied(mut entry) => {
-				if entry.get() + orders.len() + state.base_count(id) > state.card_count(id) {
-					continue;
-				}
-				*entry.get_mut() += orders.len();
-				own_ids.retain(|o| !orders.contains(&o.0));
-			}
-			Entry::Vacant(entry) => {
-				if orders.len() + state.base_count(id) > state.card_count(id) {
-					continue;
-				}
-				entry.insert(orders.len());
-				own_ids.retain(|o| !orders.contains(&o.0));
-			}
+		let seen = seen_ids.get(&id).unwrap_or(&0);
+		let too_many = seen + orders.len() + state.base_count(id) > state.card_count(id);
+
+		if !too_many {
+			seen_ids.insert(id, seen + orders.len());
+		}
+
+		for o in orders {
+			own_ids.push((o, (!too_many).then_some(id)));
 		}
 	}
 
