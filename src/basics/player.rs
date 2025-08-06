@@ -165,7 +165,7 @@ impl Player {
 
 		if *trash || *status == CardStatus::CalledToDiscard {
 			if let Some(depends) = depends_on {
-				if depends.iter().any(|d| frame.state.hands.concat().contains(d)) {
+				if frame.state.hands.concat().contains(depends) {
 					warn!("{order} depends on {depends:?}!");
 				}
 			}
@@ -208,7 +208,7 @@ impl Player {
 
 		state.hands[player_index].iter().filter_map(|&order| {
 			if let Some(depends) = &meta[order].depends_on {
-				if depends.iter().any(|d| state.hands.concat().contains(d)) {
+				if state.hands.concat().contains(depends) {
 					warn!("{order} depends on {depends:?}!");
 					return None;
 				}

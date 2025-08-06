@@ -123,7 +123,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 		state.discard_stacks[suit_index][rank - 1] += 1;
 
 		if state.discard_stacks[suit_index][rank - 1] > state.card_count(id) {
-			state.max_ranks[suit_index] = rank - 1;
+			state.max_ranks[suit_index] = std::cmp::min(state.max_ranks[suit_index], rank - 1);
 		}
 	}
 
@@ -135,7 +135,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 		}
 	}
 
-	state.cards_left -= state.play_stacks.iter().sum::<usize>() + test_options.discarded.len();
+	state.cards_left -= state.score() + test_options.discarded.len();
 
 	state.current_player_index = test_options.starting as usize;
 	state.clue_tokens = test_options.clue_tokens;

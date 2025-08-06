@@ -369,7 +369,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.4.1 (rust-bot)");
+			send_pm(&self.ws, who, "v0.4.2 (rust-bot)");
 		}
 	}
 

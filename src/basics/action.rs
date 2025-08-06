@@ -238,13 +238,15 @@ impl PerformAction {
 		}
 	}
 
-	pub fn fmt_s(&self, state: &State, player_index: usize) -> String {
+	pub fn fmt_obj(&self, game: &Game, player_index: usize) -> String {
+		let Game { state, deck_ids, .. }  = game;
+
 		let action_type = match self {
 			PerformAction::Play { target, .. } => {
-				format!("play {}, order {}", state.log_iden(&state.deck[*target]), target)
+				format!("play {}, order {}", state.log_oid(&deck_ids[*target]), target)
 			}
 			PerformAction::Discard { target, .. } => {
-				format!("discard {}, order {}", state.log_iden(&state.deck[*target]), target)
+				format!("discard {}, order {}", state.log_oid(&deck_ids[*target]), target)
 			}
 			PerformAction::Colour { target, value, .. } => {
 				(Clue { kind: ClueKind::COLOUR, value: *value, target: *target }).fmt(state)

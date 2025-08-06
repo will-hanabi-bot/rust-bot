@@ -32,6 +32,24 @@ impl Convention for Reactor {
 	fn interpret_clue(&self, prev: &Game, game: &mut Game, action: &ClueAction) {
 		let ClueAction { giver, target, .. } = &action;
 
+		for &order in &game.state.hands[*giver] {
+			let meta = &mut game.meta[order];
+			if meta.urgent {
+				warn!("removing status on {order}, didn't react");
+				meta.status = CardStatus::None;
+				meta.urgent = false;
+				meta.trash = false;
+				meta.focused = false;
+
+				for &o in &game.state.hands.concat() {
+					if game.meta[o].depends_on.map(|d| d == order).unwrap_or(false) {
+						info!("removing associated dependency on {o}");
+						game.meta[o].depends_on = None;
+					}
+				}
+			}
+		}
+
 		// Force interpretation if rewinded
 		let interp = if let Some(interp) = &game.next_interp {
 			info!("forcing rewinded interp {interp:?}");
@@ -282,7 +300,7 @@ impl Convention for Reactor {
 		if state.in_endgame() && state.rem_score() <= state.variant.suits.len() + 1{
 			info!("{}", "trying to solve endgame...".purple());
 
-			let mut solver = EndgameSolver::new();
+			let mut solver = EndgameSolver::new(true);
 			let cloned_game = game.clone();
 			let player_index = state.our_player_index;
 

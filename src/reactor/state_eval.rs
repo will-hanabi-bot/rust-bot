@@ -2,9 +2,9 @@ use log::{info, warn};
 
 use crate::basics::game::SimOpts;
 use crate::reactor::{ClueInterp, Reactor, ReactorInterp};
-use crate::basics::action::{Action, DiscardAction, PlayAction};
+use crate::basics::action::{Action, ClueAction, DiscardAction, PlayAction};
 use crate::basics::card::{CardStatus, Identifiable, Identity};
-use crate::basics::{action::ClueAction, game::{Game, Interp}};
+use crate::basics::game::{Game, Interp};
 use crate::basics::clue_result::{bad_touch_result, elim_result, playables_result, BadTouchResult, ElimResult, PlayablesResult};
 
 impl Reactor {

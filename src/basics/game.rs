@@ -11,7 +11,7 @@ use crate::basics::card::{CardStatus, ConvData};
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::{self, on_draw};
 use crate::basics::player::Link;
-use super::card::{Identifiable, Identity};
+use super::card::Identity;
 use super::player::Player;
 use crate::reactor::{ClueInterp, ReactorInterp};
 use super::state::State;
@@ -47,6 +47,7 @@ pub struct Game {
 	pub common: Player,
 	pub meta: Vec<ConvData>,
 	pub base: (State, Vec<ConvData>, Vec<Player>, Player),
+	pub deck_ids: Vec<Option<Identity>>,
 	pub in_progress: bool,
 	pub catchup: bool,
 	pub convention: Arc<dyn Convention + Send + Sync>,
@@ -78,6 +79,7 @@ impl Game {
 			common: common.clone(),
 			meta: Vec::new(),
 			base: (state, Vec::new(), players, common),
+			deck_ids: Vec::new(),
 			in_progress,
 			catchup: false,
 			convention,
@@ -93,8 +95,9 @@ impl Game {
 	pub fn blank(&self) -> Self {
 		let (state, meta, players, common) = &self.base;
 		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
-		// Copy over the deck, so that information about future cards is preserved
-		new_game.state.deck = self.state.deck.clone();
+
+		// Copy over the deck ids, so that information about future cards is preserved
+		new_game.deck_ids = self.deck_ids.clone();
 		new_game.meta = meta.clone();
 		new_game.players = players.clone();
 		new_game.common = common.clone();
@@ -242,17 +245,18 @@ impl Game {
 
 				if hypo_game.state.cards_left > 0 {
 					let order = hypo_game.state.card_order;
-					match hypo_game.state.deck.get(order).and_then(|card| card.id()) {
-						Some(Identity { suit_index, rank }) => {
+
+					match self.deck_ids.get(order) {
+						Some(Some(Identity { suit_index, rank })) => {
 							hypo_game.handle_action(&Action::draw(
 								*player_index,
 								order,
-								suit_index as i32,
-								rank as i32,
+								*suit_index as i32,
+								*rank as i32,
 							));
 						}
-						None => {
-							hypo_game.handle_action(&Action::draw( *player_index, order, -1, -1));
+						_ => {
+							hypo_game.handle_action(&Action::draw(*player_index, order, -1, -1));
 						}
 					}
 				}

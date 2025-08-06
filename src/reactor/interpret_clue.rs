@@ -274,7 +274,14 @@ impl Reactor {
 		match clue.kind {
 			ClueKind::COLOUR => {
 				let known_plays = prev.common.thinks_playables(&prev.frame(), *receiver);
-				let target = state.hands[*receiver].iter().enumerate().filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())).min();
+				let target = state.hands[*receiver].iter().enumerate()
+					.filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap()))
+					.sorted_by_key(|&(i, o)|
+						// Unclued dupe, with a clued dupe
+						if !state.deck[*o].clued && state.hands[*receiver].iter().any(|o2| o2 < o && state.deck[*o2].clued && state.deck[*o].is(&state.deck[*o2])) {
+							99
+						} else { i }
+					).next();
 
 				match target {
 					None => {
@@ -322,7 +329,7 @@ impl Reactor {
 
 								Reactor::target_play(game, action, react_order, true, false)?;
 								Reactor::target_discard(game, action, receive_order, true);
-								game.meta[receive_order].depends_on = Some(vec![react_order]);
+								game.meta[receive_order].depends_on = Some(react_order);
 
 								info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 								Some(ClueInterp::Reactive)
@@ -352,7 +359,7 @@ impl Reactor {
 
 						Reactor::target_discard(game, action, react_order, true);
 						Reactor::target_play(game, action, receive_order, false, false)?;
-						game.meta[receive_order].depends_on = Some(vec![react_order]);
+						game.meta[receive_order].depends_on = Some(react_order);
 
 						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 						Some(ClueInterp::Reactive)
@@ -405,7 +412,7 @@ impl Reactor {
 								Reactor::target_play(game, action, react_order, true, false)?;
 								game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
 								Reactor::target_play(game, action, receive_order, false, false)?;
-								game.meta[receive_order].depends_on = Some(vec![react_order]);
+								game.meta[receive_order].depends_on = Some(react_order);
 
 								info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 								return Some(ClueInterp::Reactive);
@@ -437,7 +444,7 @@ impl Reactor {
 						Reactor::target_play(game, action, react_order, true, false)?;
 						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
 						Reactor::target_play(game, action, receive_order, false, false)?;
-						game.meta[receive_order].depends_on = Some(vec![react_order]);
+						game.meta[receive_order].depends_on = Some(react_order);
 
 						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 						Some(ClueInterp::Reactive)
@@ -493,7 +500,7 @@ impl Reactor {
 
 			playables.iter().flat_map(|&o|
 				if let Some(id) = game.state.deck[o].id() {
-					vec![(o, id)]
+					vec![(o, Identity { suit_index: id.suit_index, rank: id.rank + 1 })]
 				}
 				else {
 					game.common.thoughts[o].inferred.iter().map(|i| (o, Identity { suit_index: i.suit_index, rank: i.rank + 1 })).collect::<Vec<_>>()

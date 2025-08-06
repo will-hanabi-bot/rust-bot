@@ -143,7 +143,7 @@ pub struct ConvData {
 	pub urgent: bool,
 	pub trash: bool,
 	pub status: CardStatus,
-	pub depends_on: Option<Vec<usize>>,
+	pub depends_on: Option<usize>,
 	pub reasoning: Vec<usize>,
 }
 

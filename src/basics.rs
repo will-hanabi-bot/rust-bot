@@ -3,7 +3,7 @@ use crate::basics::game::frame::Frame;
 use crate::basics::identity_set::IdentitySet;
 
 use self::clue::{BaseClue, CardClue};
-use self::card::{Card, Identifiable, Identity, Thought};
+use self::card::{Card, Identity, Thought};
 use self::game::{Game};
 use self::action::{ClueAction, DiscardAction, DrawAction, PlayAction};
 use self::variant::{touch_possibilities};
@@ -66,7 +66,7 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 }
 
 pub fn on_discard(game: &mut Game, action: &DiscardAction) {
-	let Game { common, state, .. } = game;
+	let Game { common, state, deck_ids, .. } = game;
 	let &DiscardAction { failed, order, player_index, suit_index, rank } = action;
 
 	if suit_index != -1 && rank != -1 {
@@ -75,14 +75,13 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 		state.hands[player_index].retain(|&o| o != order);
 		state.discard_stacks[id.suit_index][id.rank - 1] += 1;
 
-		// Assign identity if not known
-		if state.deck[order].id().is_none() {
-			state.deck[order].base = Some(id)
-		}
+		// Assign identity
+		state.deck[order].base = Some(id);
+		deck_ids[order] = Some(id);
 
 		// Discarded all copies of an identity
 		if state.discard_stacks[id.suit_index][id.rank - 1] == state.card_count(id) {
-			state.max_ranks[id.suit_index] = min(state.max_ranks[id.suit_index], id.rank);
+			state.max_ranks[id.suit_index] = min(state.max_ranks[id.suit_index], id.rank - 1);
 		}
 
 		let thought = &mut common.thoughts[order];
@@ -103,15 +102,34 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 }
 
 pub fn on_draw(game: &mut Game, action: &DrawAction) {
-	let Game { common, state, meta, players, .. } = game;
+	let Game { common, state, meta, players, deck_ids, .. } = game;
 	let &DrawAction { order, player_index, suit_index, rank } = action;
-	let id = (suit_index != -1).then_some(Identity { suit_index: suit_index as usize, rank: rank as usize });
+
+	let id = if suit_index != -1 {
+		if let Some(Some(deck_id)) = deck_ids.get(order) {
+			assert_eq!(*deck_id, Identity { suit_index: suit_index as usize, rank: rank as usize });
+		}
+		Some(Identity { suit_index: suit_index as usize, rank: rank as usize })
+	}
+	else {
+		None
+	};
+
+	if deck_ids.len() == order {
+		deck_ids.push(id);
+	}
+	else if deck_ids.len() > order {
+		deck_ids[order] = id;
+	}
+	else {
+		panic!("Only have {} deck ids, but drew card with order {}!", deck_ids.len(), order);
+	}
+
+	assert_eq!(state.deck.len(), order);
+	assert_eq!(state.deck.len(), state.card_order);
 
 	state.hands[player_index].insert(0, order);
-	match state.deck.get_mut(order) {
-		None => state.deck.push(Card::new(id, order, state.turn_count)),
-		Some(card) => *card = Card::new(card.base, order, state.turn_count)
-	}
+	state.deck.push(Card::new(id, order, state.turn_count));
 	state.card_order = order + 1;
 	state.cards_left -= 1;
 
@@ -136,7 +154,7 @@ pub fn on_draw(game: &mut Game, action: &DrawAction) {
 }
 
 pub fn on_play(game: &mut Game, action: &PlayAction) {
-	let Game { common, state,  .. } = game;
+	let Game { common, state, deck_ids,  .. } = game;
 	let &PlayAction { order, player_index, suit_index, rank } = action;
 
 	state.hands[player_index].retain(|&o| o != order);
@@ -146,10 +164,9 @@ pub fn on_play(game: &mut Game, action: &PlayAction) {
 
 		state.play_stacks[id.suit_index] = id.rank;
 
-		// Assign identity if not known
-		if state.deck[order].id().is_none() {
-			state.deck[order].base = Some(id)
-		}
+		// Assign identity
+		state.deck[order].base = Some(id);
+		deck_ids[order] = Some(id);
 
 		let thought = &mut common.thoughts[order];
 		thought.base = Some(id);
