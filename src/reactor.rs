@@ -5,15 +5,14 @@ use serde::Deserialize;
 
 use crate::basics;
 use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity};
-use crate::basics::clue::ClueKind;
 use crate::basics::endgame::{EndgameSolver};
 use crate::basics::game::{Convention, frame::Frame, Game, Interp};
 use crate::basics::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
-use crate::basics::player::WaitingConnection;
 use crate::basics::util;
 use crate::fix::check_fix;
 
 mod interpret_clue;
+mod interpret_reaction;
 mod state_eval;
 
 pub struct Reactor;
@@ -48,6 +47,10 @@ impl Convention for Reactor {
 					}
 				}
 			}
+		}
+
+		if let Some(wc) = &game.common.waiting && wc.reacter == *giver {
+			game.common.waiting = None;
 		}
 
 		// Force interpretation if rewinded
@@ -126,73 +129,8 @@ impl Convention for Reactor {
 			return;
 		}
 
-		if let Some(WaitingConnection { reacter, receiver, receiver_hand, clue, focus_slot, inverted, turn, .. }) = game.common.waiting.clone() {
-			'wc_scope: {
-				if *player_index != reacter {
-					warn!("Had unrelated waiting connection! {:?}", game.common.waiting);
-					break 'wc_scope;
-				}
-
-				let known_trash = prev.common.thinks_trash(&prev.frame(), reacter);
-
-				// We were waiting for a response inversion and they reacted unnaturally
-				if inverted {
-					if if known_trash.is_empty() { prev.state.hands[reacter][0] != *order } else { !known_trash.contains(order) } {
-						let rewind_turn = turn;
-						match game.rewind(rewind_turn, Action::interp(ClueInterp::Reactive)) {
-							Ok(new_game) => {
-								*game = new_game;
-								return;
-							}
-							Err(err) => warn!("Failed to rewind a response inversion! {err}")
-						}
-					}
-					else {
-						break 'wc_scope;
-					}
-				}
-
-				let Game { common, state, meta, .. } = game;
-
-				let react_slot = prev.state.hands[reacter].iter().position(|o| o == order).unwrap() + 1;
-				let mut target_slot = (focus_slot + 5 - react_slot) % 5;
-				if target_slot == 0 {
-					target_slot = 5;
-				}
-
-				if receiver_hand.get(target_slot - 1).is_none() {
-					warn!("Receiver no longer has slot {target_slot}!");
-					return;
-				}
-
-				let receive_order = receiver_hand[target_slot - 1];
-				if !state.hands[receiver].contains(&receive_order) {
-					warn!("Receiver no longer holds target {receive_order}!");
-					return;
-				}
-
-				let receive_thought = &mut common.thoughts[receive_order];
-				let receive_meta = &mut meta[receive_order];
-
-				match clue.kind {
-					ClueKind::COLOUR => {
-						receive_meta.status = CardStatus::CalledToPlay;
-						receive_thought.inferred.retain(|i| state.is_playable(i));
-						receive_meta.focused = true;
-
-						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {} (order {})",
-							state.player_names[reacter], react_slot, state.player_names[receiver], target_slot, focus_slot, state.hands[receiver][target_slot - 1]);
-					}
-					ClueKind::RANK => {
-						receive_meta.status = CardStatus::CalledToDiscard;
-						receive_thought.inferred.retain(|i| state.is_basic_trash(i));
-						receive_meta.trash = true;
-
-						info!("reactive dc+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}",
-							state.player_names[reacter], react_slot, state.player_names[receiver], target_slot, focus_slot);
-					}
-				}
-			}
+		if let Some(wc) = game.common.waiting.clone() {
+			Reactor::react_discard(prev, game, *player_index, *order, &wc);
 		}
 
 		let frame = Frame::new(&game.state, &game.meta);
@@ -204,70 +142,8 @@ impl Convention for Reactor {
 	fn interpret_play(&self, prev: &Game, game: &mut Game, action: &PlayAction) {
 		let PlayAction { player_index, order, .. } = action;
 
-		if let Some(WaitingConnection { reacter, receiver, receiver_hand, clue, focus_slot, inverted, turn, .. }) = game.common.waiting.clone() {
-			'wc_scope: {
-				if *player_index != reacter {
-					warn!("Had unrelated waiting connection! {:?}", game.common.waiting);
-					break 'wc_scope;
-				}
-
-				let known_playables = prev.common.thinks_playables(&prev.frame(), reacter);
-
-				// We were waiting for a response inversion and they reacted unnaturally
-				if inverted {
-					if !known_playables.contains(order) {
-						let rewind_turn = turn;
-						match game.rewind(rewind_turn, Action::interp(ClueInterp::Reactive)) {
-							Ok(new_game) => {
-								*game = new_game;
-								return;
-							}
-							Err(err) => warn!("Failed to rewind a response inversion! {err}")
-						}
-					}
-					else {
-						break 'wc_scope;
-					}
-				}
-
-				let Game { common, state, meta, .. } = game;
-
-				let react_slot = prev.state.hands[reacter].iter().position(|o| o == order).unwrap() + 1;
-				let mut target_slot = (focus_slot + 5 - react_slot) % 5;
-				if target_slot == 0 {
-					target_slot = 5;
-				}
-
-				if receiver_hand.get(target_slot - 1).is_none() {
-					warn!("Receiver no longer has slot {target_slot}!");
-					return;
-				}
-
-				let receive_order = receiver_hand[target_slot - 1];
-				if !state.hands[receiver].contains(&receive_order) {
-					warn!("Receiver no longer holds target {receive_order}!");
-				}
-
-				let receive_thought = &mut common.thoughts[receive_order];
-				let receive_meta = &mut meta[receive_order];
-
-				match clue.kind {
-					ClueKind::RANK => {
-						receive_meta.status = CardStatus::CalledToPlay;
-						receive_thought.inferred.retain(|i| state.is_playable(i));
-						receive_meta.focused = true;
-
-						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", state.player_names[reacter], react_slot, state.player_names[receiver], target_slot, focus_slot);
-					}
-					ClueKind::COLOUR => {
-						receive_meta.status = CardStatus::CalledToDiscard;
-						receive_thought.inferred.retain(|i| state.is_basic_trash(i));
-						receive_meta.trash = true;
-
-						info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", state.player_names[reacter], react_slot, state.player_names[receiver], target_slot, focus_slot);
-					}
-				}
-			}
+		if let Some(wc) = game.common.waiting.clone() {
+			Reactor::react_play(prev, game, *player_index, *order, &wc);
 		}
 
 		let frame = Frame::new(&game.state, &game.meta);
@@ -349,7 +225,9 @@ impl Convention for Reactor {
 		}).collect::<Vec<_>>();
 		let num_plays = all_plays.len();
 
-		let cant_discard = state.clue_tokens == 8 || (state.pace() == 0 && (num_clues > 0 || num_plays > 0));
+		let cant_discard = state.clue_tokens == 8 ||
+			(state.pace() == 0 && (num_clues > 0 || num_plays > 0)) ||
+			(num_plays > 0 && game.common.waiting.as_ref().map(|w| w.inverted).unwrap_or(false));	// If we have a play and there's a potential inversion
 		info!("can discard: {}", !cant_discard);
 
 		let all_discards = if cant_discard { Vec::new() } else {

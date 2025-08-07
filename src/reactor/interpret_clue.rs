@@ -89,8 +89,8 @@ impl Reactor {
 		game.common.refresh_links(&frame, true);
 
 		// Potential response inversion: don't allow response inversion if there's already a waiting connection
-		if game.common.waiting.is_none() && *target == game.state.our_player_index && game.state.next_player_index(*giver) != *target {
-			let receiver = game.state.our_player_index;
+		if game.common.waiting.is_none() && game.state.next_player_index(*giver) != *target {
+			let receiver = *target;
 
 			let focus_slot = Reactor::reactive_focus(&game.state, receiver, action);
 
@@ -98,7 +98,7 @@ impl Reactor {
 				giver: *giver,
 				reacter: game.state.next_player_index(*giver),
 				receiver,
-				receiver_hand: game.state.our_hand().clone(),
+				receiver_hand: game.state.hands[receiver].clone(),
 				clue: *clue,
 				focus_slot,
 				inverted: true,
@@ -113,11 +113,12 @@ impl Reactor {
 
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
+		let prev_loaded = prev.common.thinks_loaded(&frame, *target);
 		let loaded = common.thinks_loaded(&frame, *target);
 
 		// Fill-in or hard burn is legal only in a stalling situation
 		if newly_touched.is_empty() {
-			if loaded {
+			if !prev_loaded && loaded {
 				info!("revealed a safe action!");
 				return Some(ClueInterp::Reveal);
 			}
@@ -308,10 +309,7 @@ impl Reactor {
 								}
 
 								let target_slot = index + 1;
-								let mut react_slot = (focus_slot + 5 - target_slot) % 5;
-								if react_slot == 0 {
-									react_slot = 5;
-								}
+								let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
 								if state.hands[reacter].get(react_slot - 1).is_none() {
 									warn!("Reacter doesn't have slot {react_slot}!");
@@ -329,6 +327,7 @@ impl Reactor {
 
 								Reactor::target_play(game, action, react_order, true, false)?;
 								Reactor::target_discard(game, action, receive_order, true);
+								Reactor::elim_play_dc(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
 								game.meta[receive_order].depends_on = Some(react_order);
 
 								info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
@@ -338,10 +337,7 @@ impl Reactor {
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
-						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
-						if react_slot == 0 {
-							react_slot = 5;
-						}
+						let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
 						if state.hands[reacter].get(react_slot - 1).is_none() {
 							warn!("Reacter doesn't have slot {react_slot}!");
@@ -359,6 +355,7 @@ impl Reactor {
 
 						Reactor::target_discard(game, action, react_order, true);
 						Reactor::target_play(game, action, receive_order, false, false)?;
+						Reactor::elim_dc_play(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
 						game.meta[receive_order].depends_on = Some(react_order);
 
 						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
@@ -389,14 +386,10 @@ impl Reactor {
 						}
 
 						for react_slot in [1, 5, 4, 3, 2] {
-							let mut target_slot = (focus_slot + 5 - react_slot) % 5;
-							if target_slot == 0 {
-								target_slot = 5;
-							}
+							let target_slot = Reactor::calc_slot(focus_slot, react_slot);
 
 							if state.hands[reacter].get(react_slot - 1).is_none() {
-								warn!("Reacter doesn't have slot {react_slot}!");
-								return None;
+								continue;
 							}
 
 							if let Some((_,finesse_target)) = finesse_targets.iter().find(|(i, _)| i + 1 == target_slot) {
@@ -412,6 +405,7 @@ impl Reactor {
 								Reactor::target_play(game, action, react_order, true, false)?;
 								game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
 								Reactor::target_play(game, action, receive_order, false, false)?;
+								Reactor::elim_play_play(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
 								game.meta[receive_order].depends_on = Some(react_order);
 
 								info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
@@ -422,10 +416,7 @@ impl Reactor {
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;
-						let mut react_slot = (focus_slot + 5 - target_slot) % 5;
-						if react_slot == 0 {
-							react_slot = 5;
-						}
+						let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
 						if state.hands[reacter].get(react_slot - 1).is_none() {
 							warn!("Reacter doesn't have slot {react_slot}!");
@@ -444,6 +435,7 @@ impl Reactor {
 						Reactor::target_play(game, action, react_order, true, false)?;
 						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
 						Reactor::target_play(game, action, receive_order, false, false)?;
+						Reactor::elim_play_play(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
 						game.meta[receive_order].depends_on = Some(react_order);
 
 						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);

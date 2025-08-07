@@ -162,6 +162,9 @@ impl BotClient {
 							if meta.urgent {
 								flags.push("urgent");
 							}
+							if player.thoughts[order].reset {
+								flags.push("reset");
+							}
 
 							println!("{}: {} {:?}", order, state.log_iden(&state.deck[order]), meta.status);
 							println!("inferred: [{}]", player.str_infs(state, order));
@@ -369,7 +372,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.4.2 (rust-bot)");
+			send_pm(&self.ws, who, "v0.5.0 (rust-bot)");
 		}
 	}
 

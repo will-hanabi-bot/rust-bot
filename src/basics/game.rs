@@ -324,6 +324,9 @@ impl Game {
 
 		if turn == 1 && new_game.state.our_player_index == 0 {
 			for action in actions.concat().iter().take_while(|action| matches!(action, Action::Draw(_))) {
+				if matches!(action, Action::Interp(_)) {
+					continue;
+				}
 				new_game.handle_action(action);
 			}
 		}
@@ -338,6 +341,10 @@ impl Game {
 				}
 				else if new_game.state.turn_count == turn {
 					break;
+				}
+
+				if matches!(action, Action::Interp(_)) {
+					continue;
 				}
 				new_game.handle_action(&action);
 			}
