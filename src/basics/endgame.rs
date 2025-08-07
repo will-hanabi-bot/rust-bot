@@ -17,8 +17,9 @@ type Frac = fraction::Fraction;
 type RemainingMap = HashMap<Identity,RemainingEntry>;
 mod winnable;
 
-type WinnableResult = Result<(Vec<PerformAction>, Frac), String>;
-const UNWINNABLE: WinnableResult = Err(String::new());
+type WinnableResult = Result<(Vec<PerformAction>, Frac), &'static str>;
+const UNWINNABLE: WinnableResult = Err("");
+const TIMEOUT: WinnableResult = Err("timeout");
 
 pub fn remove_remaining(remaining: &RemainingMap, id: Identity) -> RemainingMap {
 	let RemainingEntry { missing, .. } = &remaining[&id];
@@ -122,7 +123,7 @@ impl EndgameSolver {
 				let thought = &game.me().thoughts[*order];
 
 				// Check if this id cannot be assigned to this order
-				let impossible = state.deck[*order].id().map(|i| i != *id).unwrap_or(false) ||
+				let impossible = state.deck[*order].id().is_some_and(|i| i != *id) ||
 					!thought.possible.contains(*id) ||
 					if !state.is_basic_trash(*id) {
 						!thought.possibilities().contains(*id)
@@ -266,7 +267,7 @@ impl EndgameSolver {
 		}
 
 		if Instant::now() > *deadline {
-			return UNWINNABLE;
+			return TIMEOUT;
 		}
 
 		match EndgameSolver::trivially_winnable(game, player_turn) {
@@ -402,7 +403,7 @@ impl EndgameSolver {
 
 		for (perform, winnable_draws) in actions {
 			if Instant::now() > *deadline {
-				return UNWINNABLE;
+				return TIMEOUT;
 			}
 
 			let mut action_winrate = Frac::ZERO;
@@ -498,7 +499,7 @@ impl EndgameSolver {
 		}
 
 		if best_actions.is_empty() {
-			Err("no action wins".to_owned())
+			Err("no action wins")
 		} else {
 			Ok((best_actions, best_winrate))
 		}

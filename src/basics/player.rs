@@ -6,7 +6,7 @@ use crate::basics::util::visible_find;
 
 use super::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions, Thought};
 use super::state::State;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use itertools::Itertools;
 use log::{warn};
 
@@ -19,7 +19,7 @@ pub enum Link {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct MatchEntry { order: usize, unknown_to: Vec<usize> }
+struct MatchEntry { order: usize, unknown_to: Option<usize> }
 
 #[derive(Debug, Clone)]
 struct IdEntry { order: usize, player_index: usize }
@@ -52,9 +52,7 @@ pub struct Player {
 
 	pub waiting: Option<WaitingConnection>,
 
-	certain_map: HashMap<Identity, HashMap<usize, Vec<usize>>>,
-	infer_map: HashMap<Identity, Vec<MatchEntry>>,
-	id_map: HashMap<Identity, Vec<IdEntry>>,
+	certain_map: Vec<Vec<MatchEntry>>,
 	cross_elim_candidates: Vec<IdEntry>,
 }
 
@@ -72,9 +70,7 @@ impl Player {
 			hypo_plays: HashSet::new(),
 			waiting: None,
 
-			certain_map: HashMap::new(),
-			infer_map: HashMap::new(),
-			id_map: HashMap::new(),
+			certain_map: Vec::new(),
 			cross_elim_candidates: Vec::new(),
 		}
 	}
@@ -337,7 +333,7 @@ impl Player {
 					let id = thought.identity(&IdOptions { infer: true, symmetric: self.player_index == player_index });
 					let actual_id: Option<Identity> = state.deck[order].id();
 
-					if !frame.is_touched(order) || actual_id.map(|i| good_touch_elim.contains(i)).unwrap_or(false) {
+					if !frame.is_touched(order) || actual_id.is_some_and(|i| good_touch_elim.contains(i)) {
 						continue;
 					}
 

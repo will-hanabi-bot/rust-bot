@@ -116,9 +116,7 @@ pub struct BotClient {
 impl BotClient {
 	pub fn new(ws: mpsc::UnboundedSender<String>, variant_manager: VariantManager) -> Self {
 		Self {
-			settings: Settings {
-				convention: CONVENTIONS[0].to_owned()
-			},
+			settings: Settings { convention: CONVENTIONS[0].to_owned() },
 			info: None,
 			table_id: None,
 			game: None,
@@ -372,7 +370,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.5.0 (rust-bot)");
+			send_pm(&self.ws, who, "v0.5.1 (rust-bot)");
 		}
 	}
 

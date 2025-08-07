@@ -41,7 +41,7 @@ impl Convention for Reactor {
 				meta.focused = false;
 
 				for &o in &game.state.hands.concat() {
-					if game.meta[o].depends_on.map(|d| d == order).unwrap_or(false) {
+					if game.meta[o].depends_on.is_some_and(|d| d == order) {
 						info!("removing associated dependency on {o}");
 						game.meta[o].depends_on = None;
 					}
@@ -227,7 +227,7 @@ impl Convention for Reactor {
 
 		let cant_discard = state.clue_tokens == 8 ||
 			(state.pace() == 0 && (num_clues > 0 || num_plays > 0)) ||
-			(num_plays > 0 && game.common.waiting.as_ref().map(|w| w.inverted).unwrap_or(false));	// If we have a play and there's a potential inversion
+			(num_plays > 0 && game.common.waiting.as_ref().is_some_and(|w| w.inverted));	// If we have a play and there's a potential inversion
 		info!("can discard: {}", !cant_discard);
 
 		let all_discards = if cant_discard { Vec::new() } else {

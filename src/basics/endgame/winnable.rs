@@ -146,7 +146,7 @@ impl EndgameSolver {
 				if play_stacks.iter().sum::<usize>() == state.max_score() {
 					Ok((vec![action], Frac::ONE))
 				} else {
-					Err("".to_owned())
+					Err("")
 				}
 			}
 		}

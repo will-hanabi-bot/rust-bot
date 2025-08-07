@@ -1,30 +1,34 @@
 use crate::basics::game::frame::Frame;
 use crate::basics::identity_set::IdentitySet;
+use crate::basics::player::MatchEntry;
 use crate::basics::variant::{all_ids};
 use crate::basics::card::{IdOptions, Identifiable, Identity, Thought};
 use crate::basics::state::State;
 use super::{IdEntry, Player, Link};
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{HashSet};
 use itertools::Itertools;
 use log::info;
 
 impl Player {
-	fn update_map(&mut self, id: Identity, exclude: Vec<usize>, resets: &mut Vec<usize>) -> (bool, Vec<Identity>) {
+	fn update_map(&mut self, state: &State, id: Identity, exclude: Vec<usize>, resets: &mut Vec<usize>) -> (bool, Vec<Identity>) {
 		let mut changed = false;
 		let mut recursive_ids = Vec::new();
 		let mut cross_elim_removals = Vec::new();
 
-		if let Some(candidates) = self.id_map.get_mut(&id) {
-			candidates.retain(|&IdEntry { order, player_index }| {
-				let no_elim = exclude.contains(&player_index) || self.certain_map.get(&id).is_some_and(|entry|
-					entry.iter().any(|(o, unknown_to)| *o == order || unknown_to.contains(&player_index)));
+		for (player_index, hand) in state.hands.iter().enumerate() {
+			if exclude.contains(&player_index) {
+				continue;
+			}
+
+			for &order in hand {
+				let thought = &mut self.thoughts[order];
+				let no_elim = !thought.possible.contains(id) ||
+					self.certain_map[Identity::to_ord(id)].iter().any(|e| e.order == order || e.unknown_to.is_some_and(|u| u == player_index));
 
 				if no_elim {
-					return true;
+					continue;
 				}
-
-				let thought = &mut self.thoughts[order];
 
 				changed = true;
 				thought.inferred.retain(|i| i != id);
@@ -38,21 +42,18 @@ impl Player {
 				// Card can be further eliminated
 				if thought.possible.len() == 1 {
 					let recursive_id = thought.possible.iter().next().unwrap();
-					match self.certain_map.entry(recursive_id) {
-						Entry::Occupied(mut e) => { e.get_mut().insert(order, Vec::new()); },
-						Entry::Vacant(e) => {
-							let mut hmap = HashMap::new();
-							hmap.insert(order, Vec::new());
-							e.insert(hmap);
-						}
-					}
+					let certains = &mut self.certain_map[Identity::to_ord(recursive_id)];
+					match certains.iter_mut().find(|e| e.order == order) {
+						Some(entry) => entry.unknown_to = None,
+						None => certains.push(MatchEntry { order, unknown_to: None })
+					};
 					recursive_ids.push(recursive_id);
 					cross_elim_removals.push(order);
 				}
-				false
-			});
-			self.cross_elim_candidates.retain(|c| !cross_elim_removals.contains(&c.order));
+			}
 		}
+
+		self.cross_elim_candidates.retain(|c| !cross_elim_removals.contains(&c.order));
 		(changed, recursive_ids)
 	}
 
@@ -66,11 +67,11 @@ impl Player {
 		let mut eliminated = IdentitySet::EMPTY;
 
 		for id in ids.iter() {
-			let known_count = state.base_count(id) + self.certain_map.get(&id).map(|e| e.len()).unwrap_or(0);
+			let known_count = state.base_count(id) + self.certain_map[Identity::to_ord(id)].len();
 
 			if known_count == state.card_count(id) {
 				eliminated.insert(id);
-				let (inner_changed, inner_recursive_ids) = self.update_map(id, Vec::new(), resets);
+				let (inner_changed, inner_recursive_ids) = self.update_map(state, id, Vec::new(), resets);
 				changed = changed || inner_changed;
 				recursive_ids.extend(&inner_recursive_ids);
 			}
@@ -97,26 +98,20 @@ impl Player {
 
 		for (id, group) in groups {
 			if let Some(id) = id {
-				let certains = self.certain_map.get(&id).map(|c|
-					c.iter().filter(|(order, _)| !group.iter().any(|e| e.order == **order)).count()
-				).unwrap_or(0);
+				let certains = self.certain_map[Identity::to_ord(id)].iter().filter(|c| !group.iter().any(|e| e.order == c.order)).count();
 
-				if !self.id_map.contains_key(&id) || group.len() < state.remaining_multiplicity([id].into_iter()) - certains {
+				if group.len() < state.remaining_multiplicity([id].into_iter()) - certains {
 					continue;
 				}
 
-				let (inner_changed, _) = self.update_map(id, group.iter().map(|g| g.player_index).collect(), resets);
+				let (inner_changed, _) = self.update_map(state, id, group.iter().map(|g| g.player_index).collect(), resets);
 				changed = changed || inner_changed;
 			}
 		}
 
 		// Now elim all the cards outside of this entry
 		for id in ids.iter() {
-			if !self.id_map.contains_key(&id) {
-				continue;
-			}
-
-			let (inner_changed, _) = self.update_map(id, entries.iter().map(|e| e.player_index).collect(), resets);
+			let (inner_changed, _) = self.update_map(state, id, entries.iter().map(|e| e.player_index).collect(), resets);
 			changed = changed || inner_changed;
 		}
 
@@ -160,11 +155,9 @@ impl Player {
 				continue;
 			}
 
-			if let Some(entries) = self.certain_map.get(&id) {
-				for order in entries.keys() {
-					if !certains.contains(order) {
-						next_certains.push(*order);
-					}
+			for MatchEntry { order, .. } in &self.certain_map[Identity::to_ord(id)] {
+				if !certains.contains(order) {
+					next_certains.push(*order);
 				}
 			}
 		}
@@ -182,7 +175,7 @@ impl Player {
 	pub fn card_elim(&mut self, state: &State) -> Vec<usize> {
 		let mut resets = Vec::new();
 		self.certain_map.clear();
-		self.id_map.clear();
+		self.certain_map.resize(state.all_ids.len(), Vec::new());
 		self.cross_elim_candidates.clear();
 
 		let actual_id_opts = IdOptions { symmetric: self.is_common, ..Default::default() };
@@ -193,34 +186,14 @@ impl Player {
 				let thought = &self.thoughts[order];
 				let id = thought.identity(&actual_id_opts);
 
-				let unknown_to = if thought.identity(&symmetric_id_opts).is_none() {
-					vec![player_index]
-				}
-				else {
-					Vec::new()
-				};
+				let unknown_to = thought.identity(&symmetric_id_opts).is_none().then_some(player_index);
 
 				if let Some(id) = id {
-					match self.certain_map.entry(id) {
-						Entry::Occupied(mut e) => { e.get_mut().insert(order, unknown_to); },
-						Entry::Vacant(e) => {
-							let mut hmap = HashMap::new();
-							hmap.insert(order, unknown_to);
-							e.insert(hmap);
-						}
-					}
+					self.certain_map[Identity::to_ord(id)].push(MatchEntry { order, unknown_to });
 				}
 
 				if thought.possible.len() > 1 && thought.possible.iter().any(|id| !state.is_basic_trash(id)) && state.remaining_multiplicity(thought.possible.iter()) <= 8 {
 					self.cross_elim_candidates.push(IdEntry { order, player_index });
-				}
-
-				for id in thought.possible.iter() {
-					let entry = IdEntry { order, player_index };
-					match self.id_map.entry(id) {
-						Entry::Occupied(mut e) => e.get_mut().push(entry),
-						Entry::Vacant(e) => { e.insert(vec![entry]); }
-					}
 				}
 			}
 		}
@@ -232,8 +205,6 @@ impl Player {
 	}
 
 	pub fn good_touch_elim(&mut self, frame: &Frame) -> Vec<usize> {
-		self.certain_map.clear();
-		self.infer_map.clear();
 		let mut elim_candidates = Vec::new();
 		let mut resets = Vec::new();
 

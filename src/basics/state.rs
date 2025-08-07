@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
-use crate::basics::variant::DARK;
+use crate::basics::identity_set::IdentitySet;
+use crate::basics::variant::{all_ids, DARK};
 use super::action::Action;
 use super::clue::{BaseClue, Clue, ClueKind};
 use super::card::{Card, Identifiable, Identity, Thought};
@@ -17,6 +18,7 @@ pub struct State {
 	pub hands: Vec<Vec<usize>>,
 	pub deck: Vec<Card>,
 	pub variant: Variant,
+	pub all_ids: IdentitySet,
 	pub player_names: Vec<String>,
 	pub num_players: usize,
 	pub our_player_index: usize,
@@ -57,6 +59,7 @@ impl State {
 			strikes: 0,
 			hands: (0..num_players).map(|_| Vec::new()).collect(),
 			deck: Vec::new(),
+			all_ids: IdentitySet::from_iter(all_ids(&variant)),
 			variant,
 			player_names,
 			num_players,

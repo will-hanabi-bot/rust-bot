@@ -138,10 +138,6 @@ impl Game {
 			Action::Clue(clue) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
 				self.handle_clue(prev, clue);
-
-				for order in &clue.list {
-					self.state.deck[*order].newly_clued = false;
-				}
 			}
 			Action::Discard(discard) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
@@ -197,11 +193,6 @@ impl Game {
 	pub fn simulate_clean(&self) -> Self {
 		let mut hypo_game = self.clone();
 		hypo_game.catchup = true;
-		for hand in &self.state.hands {
-			for &order in hand {
-				hypo_game.state.deck[order].newly_clued = false;
-			}
-		}
 		hypo_game
 	}
 

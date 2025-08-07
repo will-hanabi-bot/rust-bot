@@ -87,7 +87,7 @@ impl Reactor {
 		let frame = game.frame();
 		let player_index = (state.our_player_index + offset) % state.num_players;
 
-		if player_index == state.our_player_index || state.endgame_turns.map(|t| t == 0).unwrap_or(false) {
+		if player_index == state.our_player_index || state.endgame_turns.is_some_and(|t| t == 0) {
 			return value;
 		}
 

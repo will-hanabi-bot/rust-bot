@@ -22,7 +22,7 @@ pub mod util;
 pub mod identity_set;
 
 pub fn on_clue(game: &mut Game, action: &ClueAction) {
-	let Game { common, state, meta, .. } = game;
+	let Game { common, state, meta, deck_ids, .. } = game;
 	let &ClueAction { target, clue, ref list, giver } = action;
 	let BaseClue { kind, value } = clue;
 	let new_possible: IdentitySet = IdentitySet::from_iter(touch_possibilities(&clue, &state.variant));
@@ -33,11 +33,7 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 
 		if list.contains(&order) {
 			let card = &mut state.deck[order];
-
-			if !card.clued {
-				card.clued = true;
-				card.newly_clued = true;
-			}
+			card.clued = true;
 			card.clues.push(CardClue { kind, value, giver, turn: state.turn_count });
 
 			let new_inferred = inferred.intersect(&new_possible);
@@ -47,8 +43,10 @@ pub fn on_clue(game: &mut Game, action: &ClueAction) {
 			thought.possible = possible.intersect(&new_possible);
 
 			// Write identity if fully known
-			if thought.possible.len() == 1 && card.base.is_none() {
-				card.base = Some(thought.possible.iter().next().unwrap());
+			if thought.possible.len() == 1 {
+				let id = thought.possible.iter().next().unwrap();
+				card.base = Some(id);
+				deck_ids[order] = Some(id);
 			}
 
 			if new_reasoning {

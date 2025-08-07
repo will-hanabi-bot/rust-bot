@@ -42,14 +42,16 @@ impl Reactor {
 
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
-			let react_thought = &common.thoughts[state.hands[reacter][react_slot - 1]];
+			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
+				let react_thought = &common.thoughts[*react_order];
 
-			if react_thought.possible.iter().all(|i| state.is_critical(i)) {
-				continue;
-			}
-			else {
-				common.thoughts[*receive_order].inferred.retain(|i| !state.is_basic_trash(i));
-				info!("eliminated trash from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
+				if react_thought.possible.iter().all(|i| state.is_critical(i)) {
+					continue;
+				}
+				else {
+					common.thoughts[*receive_order].inferred.retain(|i| !state.is_basic_trash(i));
+					info!("eliminated trash from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
+				}
 			}
 		}
 	}
@@ -60,15 +62,17 @@ impl Reactor {
 
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
-			let react_thought = &common.thoughts[state.hands[reacter][react_slot - 1]];
-			let playable_reacts = react_thought.possible.iter().filter(|&i| state.is_playable(i)).collect::<Vec<_>>();
+			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
+				let react_thought = &common.thoughts[*react_order];
+				let playable_reacts = react_thought.possible.iter().filter(|&i| state.is_playable(i)).collect::<Vec<_>>();
 
-			if playable_reacts.is_empty() {
-				continue;
-			}
-			else {
-				common.thoughts[*receive_order].inferred.retain(|i| !state.is_basic_trash(i));
-				info!("eliminated trash from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
+				if playable_reacts.is_empty() {
+					continue;
+				}
+				else {
+					common.thoughts[*receive_order].inferred.retain(|i| !state.is_basic_trash(i));
+					info!("eliminated trash from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
+				}
 			}
 		}
 	}
@@ -76,17 +80,19 @@ impl Reactor {
 	pub(super) fn elim_dc_play(state: &State, common: &mut Player, meta: &mut [ConvData], reacter: usize, receiver_hand: &[usize], focus_slot: usize, target_slot: usize) {
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
-			let react_thought = &common.thoughts[state.hands[reacter][react_slot - 1]];
+			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
+				let react_thought = &common.thoughts[*react_order];
 
-			if react_thought.possible.iter().all(|i| state.is_critical(i)) {
-				continue;
-			}
-			else {
-				common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i));
-				info!("eliminated playables from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
+				if react_thought.possible.iter().all(|i| state.is_critical(i)) {
+					continue;
+				}
+				else {
+					common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i));
+					info!("eliminated playables from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
 
-				if common.thoughts[*receive_order].inferred.is_empty() {
-					meta[*receive_order].trash = true;
+					if common.thoughts[*receive_order].inferred.is_empty() {
+						meta[*receive_order].trash = true;
+					}
 				}
 			}
 		}
@@ -95,23 +101,25 @@ impl Reactor {
 	pub(super) fn elim_play_play(state: &State, common: &mut Player, meta: &mut [ConvData], reacter: usize, receiver_hand: &[usize], focus_slot: usize, target_slot: usize) {
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
-			let react_thought = &common.thoughts[state.hands[reacter][react_slot - 1]];
-			let playable_reacts = react_thought.possible.iter().filter(|&i| state.is_playable(i)).collect::<Vec<_>>();
+			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
+				let react_thought = &common.thoughts[*react_order];
+				let playable_reacts = react_thought.possible.iter().filter(|&i| state.is_playable(i)).collect::<Vec<_>>();
 
-			if playable_reacts.is_empty() {
-				continue;
-			}
-			else if playable_reacts.len() == 1 {
-				common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i) || playable_reacts.contains(&i));
-				info!("eliminated playables except {} from slot {} {} - {}", state.log_id(*playable_reacts.first().unwrap()), i + 1, *receive_order, common.str_infs(state, *receive_order));
-			}
-			else {
-				common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i));
-				info!("eliminated playables from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
-			}
+				if playable_reacts.is_empty() {
+					continue;
+				}
+				else if playable_reacts.len() == 1 {
+					common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i) || playable_reacts.contains(&i));
+					info!("eliminated playables except {} from slot {} {} - {}", state.log_id(*playable_reacts.first().unwrap()), i + 1, *receive_order, common.str_infs(state, *receive_order));
+				}
+				else {
+					common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i));
+					info!("eliminated playables from slot {} {} - {}", i + 1, *receive_order, common.str_infs(state, *receive_order));
+				}
 
-			if common.thoughts[*receive_order].inferred.is_empty() {
-				meta[*receive_order].trash = true;
+				if common.thoughts[*receive_order].inferred.is_empty() {
+					meta[*receive_order].trash = true;
+				}
 			}
 		}
 	}

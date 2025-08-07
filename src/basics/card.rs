@@ -55,7 +55,7 @@ pub struct Identity {
 }
 
 impl Identity {
-	pub fn to_ord(&self) -> usize {
+	pub fn to_ord(self) -> usize {
 		self.suit_index * 5 + (self.rank - 1)
 	}
 
@@ -91,7 +91,6 @@ pub struct Card {
 	pub order: usize,
 	pub drawn_index: usize,
 	pub clued: bool,
-	pub newly_clued: bool,
 	pub clues: Vec<CardClue>,
 }
 
@@ -114,7 +113,6 @@ impl Card {
 			order,
 			drawn_index,
 			clued: false,
-			newly_clued: false,
 			clues: Vec::new(),
 		}
 	}

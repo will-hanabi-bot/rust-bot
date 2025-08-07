@@ -21,7 +21,7 @@ pub fn elim_result(prev: &Game, game: &Game, hand: &[usize], list: &[usize]) -> 
 		let card = &game.state.deck[order];
 
 		if card.clued && game.meta[order].status != CardStatus::CalledToDiscard && thought.possible.len() < prev_thought.possible.len() {
-			if card.newly_clued && !prev.frame().is_blind_playing(order) && !game.common.order_kt(&game.frame(), order) {
+			if !prev.state.deck[order].clued && !prev.frame().is_blind_playing(order) && !game.common.order_kt(&game.frame(), order) {
 				new_touched.push(order);
 			}
 			else if list.contains(&order) && game.state.has_consistent_inferences(thought) && game.meta[order].status != CardStatus::CalledToPlay {
@@ -57,7 +57,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 			let card = &state.deck[order];
 
 			// Not newly clued, trash id or we don't know: don't care about duplicating
-			if !card.newly_clued || card.id().map(|id| state.is_basic_trash(id)).unwrap_or(true) {
+			if prev.state.deck[order].clued || !card.clued || card.id().map(|id| state.is_basic_trash(id)).unwrap_or(true) {
 				continue;
 			}
 
@@ -76,9 +76,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 	let mut trash = Vec::new();
 
 	for &order in &state.hands[target] {
-		let card = &state.deck[order];
-
-		if !card.newly_clued {
+		if prev.state.deck[order].clued || !state.deck[order].clued {
 			continue;
 		}
 
@@ -87,7 +85,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 			continue;
 		}
 
-		if let Some(id) = card.id() {
+		if let Some(id) = state.deck[order].id() {
 			if state.is_basic_trash(id) {
 				bad_touch.push(order);
 			}
@@ -96,16 +94,14 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 
 	// Previously-finessed cards can be reset (and no longer touched) after the clue, so double-check for "duplicates".
 	for &order in &state.hands[target] {
-		let card = &state.deck[order];
-
-		if !card.newly_clued || bad_touch.contains(&order) || trash.contains(&order) {
+		if prev.state.deck[order].clued || !state.deck[order].clued || bad_touch.contains(&order) || trash.contains(&order) {
 			continue;
 		}
 
 		for (i, hand) in state.hands.iter().enumerate() {
 			for &o in hand {
 				let duplicated = (prev.frame().is_touched(o) || game.frame().is_touched(o)) &&
-					game.me().thoughts[o].matches(card, &MatchOptions { infer: true, ..Default::default() }) &&
+					game.me().thoughts[o].matches(&state.deck[order], &MatchOptions { infer: true, ..Default::default() }) &&
 					(i != target || o < order);
 
 				if duplicated {
