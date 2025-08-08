@@ -167,6 +167,7 @@ impl BotClient {
 							println!("{}: {} {:?}", order, state.log_iden(&state.deck[order]), meta.status);
 							println!("inferred: [{}]", player.str_infs(state, order));
 							println!("possible: [{}]", player.str_poss(state, order));
+							println!("reasoning: {:?}", meta.reasoning);
 							if !flags.is_empty() {
 								println!("flags: {flags:?}");
 							}
@@ -370,7 +371,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.5.1 (rust-bot)");
+			send_pm(&self.ws, who, "v0.5.2 (rust-bot)");
 		}
 	}
 

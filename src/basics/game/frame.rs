@@ -14,14 +14,14 @@ impl<'a> Frame<'a> {
 		let Frame { state, meta } = self;
 		let ConvData { status, .. } = meta[order];
 
-		state.deck[order].clued || status == CardStatus::Finessed || status == CardStatus::CalledToPlay
+		state.deck[order].clued || status == CardStatus::CalledToPlay
 	}
 
 	pub fn is_blind_playing(&self, order: usize) -> bool {
 		let Frame { state, meta } = self;
 		let ConvData { status, .. } = meta[order];
 
-		!state.deck[order].clued && (status == CardStatus::Finessed || status == CardStatus::CalledToPlay)
+		!state.deck[order].clued && (status == CardStatus::CalledToPlay)
 	}
 
 	pub fn get_note(&self, common: &Player, order: usize) -> String {
@@ -38,7 +38,7 @@ impl<'a> Frame<'a> {
 		};
 
 		match self.meta[order].status {
-			CardStatus::Finessed | CardStatus::CalledToPlay => {
+			CardStatus::CalledToPlay => {
 				format!("[f]{}", if note.is_empty() { String::new() } else { format!(" [{note}]") })
 			}
 			CardStatus::ChopMoved => {

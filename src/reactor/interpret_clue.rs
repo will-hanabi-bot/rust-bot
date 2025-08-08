@@ -279,18 +279,17 @@ impl Reactor {
 					.filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap()))
 					.sorted_by_key(|&(i, o)|
 						// Unclued dupe, with a clued dupe
-						if !state.deck[*o].clued && state.hands[*receiver].iter().any(|o2| o2 < o && state.deck[*o2].clued && state.deck[*o].is(&state.deck[*o2])) {
+						if !prev.state.deck[*o].clued && state.hands[*receiver].iter().any(|o2| o2 < o && prev.state.deck[*o2].clued && state.deck[*o].is(&state.deck[*o2])) {
 							99
 						} else { i }
 					).next();
 
 				match target {
 					None => {
-						let prev_known_trash = prev.common.thinks_trash(&prev.frame(), *receiver);
-						let known_trash = common.thinks_trash(&Frame::new(state, meta), *receiver);
+						let prev_kt = prev.common.thinks_trash(&prev.frame(), *receiver);
 
 						let all_trash = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-							!prev_known_trash.contains(o) && !known_trash.contains(o) &&
+							!prev_kt.contains(o) &&
 							(state.is_basic_trash(state.deck[*o].id().unwrap()) ||
 								state.hands[*receiver].iter().any(|o2| o2 != o && state.deck[*o].is(&state.deck[*o2])))		// duped in the same hand
 						)
@@ -326,7 +325,7 @@ impl Reactor {
 								}
 
 								Reactor::target_play(game, action, react_order, true, false)?;
-								Reactor::target_discard(game, action, receive_order, true);
+								Reactor::target_discard(game, action, receive_order, false);
 								Reactor::elim_play_dc(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
 								game.meta[receive_order].depends_on = Some(react_order);
 
@@ -370,7 +369,7 @@ impl Reactor {
 					!known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())
 				).sorted_by_key(|(i, o)| {
 					// Do not target an unclued copy when there is a clued copy
-					let unclued_dupe = !state.deck[**o].clued && state.hands[*receiver].iter().any(|o2| &o2 != o && state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2]));
+					let unclued_dupe = !prev.state.deck[**o].clued && state.hands[*receiver].iter().any(|o2| &o2 != o && prev.state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2]));
 					if unclued_dupe { 99 } else { *i }
 				}).next();
 
@@ -505,9 +504,15 @@ impl Reactor {
 			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(&id)) {
 				let conn_id = Identity { suit_index: id.suit_index, rank: id.rank - 1 };
 				game.common.thoughts[*conn_order].inferred.retain(|i| i == conn_id);
-				game.meta[*conn_order].urgent = true;
-				game.meta[*conn_order].status = CardStatus::CalledToPlay;
-				info!("updating connecting {} as {} to be urgent", conn_order, game.state.log_id(conn_id))
+
+				let meta = &mut game.meta[*conn_order];
+				meta.urgent = true;
+				meta.status = CardStatus::CalledToPlay;
+				if meta.reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
+					meta.reasoning.push(game.state.turn_count);
+				}
+
+				info!("updating connecting {} as {} to be urgent", conn_order, game.state.log_id(conn_id));
 			}
 		}
 
@@ -517,6 +522,9 @@ impl Reactor {
 		let reset = inferred.is_empty();
 		game.common.thoughts[target].inferred = inferred;
 		game.common.thoughts[target].info_lock = Some(inferred);
+		if game.meta[target].reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
+			game.meta[target].reasoning.push(game.state.turn_count);
+		}
 
 		if reset || !game.state.has_consistent_inferences(&game.common.thoughts[target]) {
 			game.common.thoughts[target].reset_inferences();
@@ -552,6 +560,9 @@ impl Reactor {
 		if urgent {
 			meta.urgent = true;
 		}
+		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+			meta.reasoning.push(state.turn_count);
+		}
 
 		info!("targeting discard {}, infs {}", target, common.str_infs(state, target));
 	}
@@ -581,6 +592,9 @@ impl Reactor {
 
 				if !state.deck[order].clued && meta.status == CardStatus::None {
 					meta.status = CardStatus::ChopMoved;
+					if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+						meta.reasoning.push(state.turn_count);
+					}
 				}
 			}
 			return Some(ClueInterp::Lock);
@@ -594,6 +608,9 @@ impl Reactor {
 		let meta = &mut game.meta[hand[target_index]];
 		meta.status = CardStatus::CalledToDiscard;
 		meta.trash = true;
+		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+			meta.reasoning.push(state.turn_count);
+		}
 		Some(ClueInterp::RefDiscard)
 	}
 }

@@ -79,7 +79,6 @@ impl Identifiable for Identity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CardStatus {
 	None,
-	Finessed,
 	ChopMoved,
 	CalledToPlay,
 	CalledToDiscard,
@@ -98,7 +97,6 @@ impl Display for CardStatus {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match self {
 			CardStatus::None => write!(f, "none"),
-			CardStatus::Finessed => write!(f, "finessed"),
 			CardStatus::ChopMoved => write!(f, "chop moved"),
 			CardStatus::CalledToPlay => write!(f, "called to play"),
 			CardStatus::CalledToDiscard => write!(f, "called to discard"),
@@ -156,10 +154,6 @@ impl ConvData {
 			status: CardStatus::None,
 			reasoning: Vec::new(),
 		}
-	}
-
-	pub fn blind_playing(&self) -> bool {
-		self.status == CardStatus::Finessed
 	}
 
 	pub fn cm(&self) -> bool {

@@ -192,9 +192,8 @@ impl Player {
 	pub fn thinks_locked(&self, frame: &Frame, player_index: usize) -> bool {
 		!self.thinks_loaded(frame, player_index) && frame.state.hands[player_index].iter().all(|&order|
 			frame.state.deck[order].clued ||
-			frame.meta[order].status == CardStatus::Finessed ||
 			frame.meta[order].status == CardStatus::CalledToPlay ||
-			frame.meta[order].status == CardStatus::ChopMoved
+			frame.meta[order].cm()
 		)
 	}
 

@@ -1,6 +1,5 @@
 use log::{info, warn};
 
-
 use crate::basics::action::Action;
 use crate::basics::card::{CardStatus, ConvData};
 use crate::basics::clue::ClueKind;
@@ -41,6 +40,10 @@ impl Reactor {
 		Reactor::elim_play_play(state, common, meta, reacter, receiver_hand, focus_slot, receiver_hand.len() + 1);
 
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
+			if meta[*receive_order].status == CardStatus::CalledToPlay || meta[*receive_order].status == CardStatus::CalledToDiscard {
+				continue;
+			}
+
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
 			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
 				let react_thought = &common.thoughts[*react_order];
@@ -61,6 +64,10 @@ impl Reactor {
 		Reactor::elim_play_play(state, common, meta, reacter, receiver_hand, focus_slot, receiver_hand.len() + 1);
 
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
+			if meta[*receive_order].status == CardStatus::CalledToPlay || meta[*receive_order].status == CardStatus::CalledToDiscard {
+				continue;
+			}
+
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
 			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
 				let react_thought = &common.thoughts[*react_order];
@@ -79,6 +86,10 @@ impl Reactor {
 
 	pub(super) fn elim_dc_play(state: &State, common: &mut Player, meta: &mut [ConvData], reacter: usize, receiver_hand: &[usize], focus_slot: usize, target_slot: usize) {
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
+			if meta[*receive_order].status == CardStatus::CalledToPlay || meta[*receive_order].status == CardStatus::CalledToDiscard {
+				continue;
+			}
+
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
 			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
 				let react_thought = &common.thoughts[*react_order];
@@ -100,6 +111,10 @@ impl Reactor {
 
 	pub(super) fn elim_play_play(state: &State, common: &mut Player, meta: &mut [ConvData], reacter: usize, receiver_hand: &[usize], focus_slot: usize, target_slot: usize) {
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
+			if meta[*receive_order].status == CardStatus::CalledToPlay || meta[*receive_order].status == CardStatus::CalledToDiscard {
+				continue;
+			}
+
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
 			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
 				let react_thought = &common.thoughts[*react_order];
@@ -125,13 +140,16 @@ impl Reactor {
 	}
 
 	fn target_idiscard(prev: &Game, game: &mut Game, wc: &WaitingConnection, target_slot: usize) {
-		let Game { common, meta, .. } = game;
+		let Game { common, state, meta, .. } = game;
 		let order = wc.receiver_hand[target_slot - 1];
 		let meta = &mut meta[order];
 
 		meta.status = CardStatus::CalledToDiscard;
 		common.thoughts[order].inferred.retain(|i| !prev.state.is_critical(i));
 		meta.trash = true;
+		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+			meta.reasoning.push(state.turn_count);
+		}
 	}
 
 	fn target_iplay(_prev: &Game, game: &mut Game, wc: &WaitingConnection, target_slot: usize) {
@@ -142,6 +160,9 @@ impl Reactor {
 		meta.status = CardStatus::CalledToPlay;
 		common.thoughts[order].inferred.retain(|i| state.is_playable(i));
 		meta.focused = true;
+		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+			meta.reasoning.push(state.turn_count);
+		}
 	}
 
 	pub fn react_discard(prev: &Game, game: &mut Game, player_index: usize, order: usize, wc: &WaitingConnection) {

@@ -30,8 +30,9 @@ pub enum ReactorInterp {
 impl Convention for Reactor {
 	fn interpret_clue(&self, prev: &Game, game: &mut Game, action: &ClueAction) {
 		let ClueAction { giver, target, .. } = &action;
+		let Game { state, .. } = game;
 
-		for &order in &game.state.hands[*giver] {
+		for &order in &state.hands[*giver] {
 			let meta = &mut game.meta[order];
 			if meta.urgent {
 				warn!("removing status on {order}, didn't react");
@@ -39,11 +40,17 @@ impl Convention for Reactor {
 				meta.urgent = false;
 				meta.trash = false;
 				meta.focused = false;
+				if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+					meta.reasoning.push(state.turn_count);
+				}
 
-				for &o in &game.state.hands.concat() {
+				for &o in &state.hands.concat() {
 					if game.meta[o].depends_on.is_some_and(|d| d == order) {
 						info!("removing associated dependency on {o}");
 						game.meta[o].depends_on = None;
+						if game.meta[o].reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+							game.meta[o].reasoning.push(state.turn_count);
+						}
 					}
 				}
 			}
