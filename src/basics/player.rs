@@ -223,6 +223,11 @@ impl Player {
 		!self.thinks_playables(frame, player_index).is_empty() || !self.thinks_trash(frame, player_index).is_empty()
 	}
 
+	/** Returns how far the identity is from playable (through cards known by this player). 0 means that it is playable.*/
+	pub fn playable_away(&self, id: Identity) -> i32 {
+		id.rank as i32 - (self.hypo_stacks[id.suit_index] + 1) as i32
+	}
+
 	pub fn save2(&self, state: &State, id: Identity) -> bool {
 		let Identity { suit_index, rank } = id;
 

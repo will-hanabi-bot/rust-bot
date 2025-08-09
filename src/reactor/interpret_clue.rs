@@ -3,10 +3,10 @@ use log::{info, warn};
 use std::mem;
 
 use crate::basics;
+use crate::basics::action::{Action, ClueAction};
 use crate::basics::card::{CardStatus, Identifiable, Identity};
 use crate::basics::clue::{Clue, ClueKind};
-use crate::basics::game::frame::Frame;
-use crate::basics::game::Game;
+use crate::basics::game::{frame::Frame, Game};
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::WaitingConnection;
 use crate::basics::state::State;
@@ -14,7 +14,6 @@ use crate::basics::util::players_upto;
 use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
-use crate::basics::action::{Action, ClueAction};
 
 impl Reactor {
 	fn reactive_focus(state: &State, receiver: usize, action: &ClueAction) -> usize {
@@ -291,7 +290,7 @@ impl Reactor {
 					None => {
 						let prev_kt = prev.common.thinks_trash(&prev.frame(), *receiver);
 
-						let all_trash = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+						let mut targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
 							!prev_kt.contains(o) &&
 							(state.is_basic_trash(state.deck[*o].id().unwrap()) ||
 								state.hands[*receiver].iter().any(|o2| o2 != o && state.deck[*o].is(&state.deck[*o2])))		// duped in the same hand
@@ -299,7 +298,16 @@ impl Reactor {
 						.sorted_by_key(|(_, o)| if prev.state.deck[**o].clued { 0 } else { 1 })
 						.collect::<Vec<_>>();
 
-						match all_trash.first() {
+						// Add sacrifice discard targets
+						if targets.is_empty() {
+							targets.extend(state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+								!prev_kt.contains(o) && !state.is_critical(state.deck[*o].id().unwrap())
+							).sorted_by_key(|(_, o)|
+								-common.playable_away(state.deck[**o].id().unwrap())
+							));
+						}
+
+						match targets.first() {
 							None => {
 								warn!("reactive clue but receiver had no playable or trash targets!");
 								None

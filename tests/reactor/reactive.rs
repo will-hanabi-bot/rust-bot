@@ -195,3 +195,21 @@ fn it_doesnt_target_an_unclued_dupe() {
 	// We should discard slot 5 (so that Bob plays slot 2).
 	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][4]].status, CardStatus::CalledToDiscard);
 }
+
+#[test]
+fn it_reacts_to_a_sacrifice() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["r4", "b2", "y3", "p3", "g5"],
+		&["g1", "b5", "p2", "b1", "g4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		play_stacks: Some(&[2, 0, 0, 0, 0]),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues green to Bob");
+
+	// We should play slot 2 (Bob discards y3 in slot 3).
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][1]].status, CardStatus::CalledToPlay);
+}
