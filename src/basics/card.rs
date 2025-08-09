@@ -68,6 +68,20 @@ impl Identity {
 			panic!("Couldn't convert ordinal {ord} to identity!");
 		}
 	}
+
+	pub fn prev(self) -> Self {
+		if self.rank == 1 {
+			panic!("Tried to get prev of {self:?}");
+		}
+		Identity { suit_index: self.suit_index, rank: self.rank - 1 }
+	}
+
+	pub fn next(self) -> Self {
+		if self.rank == 5 {
+			panic!("Tried to get next of {self:?}");
+		}
+		Identity { suit_index: self.suit_index, rank: self.rank + 1 }
+	}
 }
 
 impl Identifiable for Identity {
@@ -128,6 +142,7 @@ pub struct Thought {
 	pub base: Option<Identity>,
 	pub possible: IdentitySet,
 	pub inferred: IdentitySet,
+	pub old_inferred: Option<IdentitySet>,
 	pub info_lock: Option<IdentitySet>,
 	pub reset: bool,
 }
@@ -139,7 +154,6 @@ pub struct ConvData {
 	pub urgent: bool,
 	pub trash: bool,
 	pub status: CardStatus,
-	pub depends_on: Option<usize>,
 	pub reasoning: Vec<usize>,
 }
 
@@ -150,7 +164,6 @@ impl ConvData {
 			focused: false,
 			urgent: false,
 			trash: false,
-			depends_on: None,
 			status: CardStatus::None,
 			reasoning: Vec::new(),
 		}
@@ -168,6 +181,7 @@ impl Thought {
 			base,
 			possible: poss,
 			inferred: poss,
+			old_inferred: None,
 			info_lock: None,
 			reset: false,
 		}

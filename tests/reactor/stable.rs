@@ -16,7 +16,7 @@ fn it_understands_a_ref_play() {
 
 	take_turn(&mut game, "Alice clues green to Bob");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Bob, 1, &["r1", "y1", "b1", "p1"]);
 }
 
@@ -30,7 +30,7 @@ fn it_understands_a_gapped_ref_play() {
 
 	take_turn(&mut game, "Alice clues purple to Bob");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][1]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][1]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Bob, 2, &["r1", "y1", "g1", "b1"]);
 }
 
@@ -56,7 +56,7 @@ fn it_understands_a_ref_discard() {
 
 	take_turn(&mut game, "Alice clues 4 to Bob");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][1]].status, &CardStatus::CalledToDiscard);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][1]].status, CardStatus::CalledToDiscard);
 }
 
 #[test]

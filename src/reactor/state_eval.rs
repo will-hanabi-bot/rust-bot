@@ -68,8 +68,10 @@ impl Reactor {
 			+ if state.in_endgame() { 0.1 } else { 0.05 } * elim.len() as f32
 			+ 0.1 * bad_touch.len() as f32;
 
-		if let Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Fix))) = hypo.last_move {
-			value += 1.0;
+		match hypo.last_move {
+			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Fix))) => value += 1.0,
+			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Reactive))) => value += 1.0,
+			_ => ()
 		}
 
 		value

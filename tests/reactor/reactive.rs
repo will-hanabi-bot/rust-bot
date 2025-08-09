@@ -17,12 +17,12 @@ fn it_understands_a_reactive_play_play() {
 
 	take_turn(&mut game, "Alice clues 5 to Cathy");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Bob, 1, &["r1", "y1", "b1", "p1"]);
 
 	take_turn(&mut game, "Bob plays b1, drawing p1");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Cathy as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][0]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Cathy, 1, &["r1", "y1", "g1", "b2", "p1"]);
 }
 
@@ -39,7 +39,7 @@ fn it_reacts_to_a_reactive_play_play() {
 
 	take_turn(&mut game, "Cathy clues 2 to Bob");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][0]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["r1", "y1", "g1", "p1"]);
 
 	let action = game.take_action();
@@ -62,7 +62,7 @@ fn it_receives_a_reactive_play_play() {
 	take_turn(&mut game, "Cathy plays g1, drawing y3");
 
 	// Alice's slot 2 is called to play.
-	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][1]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][1]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Alice, 2, &["r1", "y1", "g2", "b1", "p1"]);
 }
 
@@ -85,10 +85,10 @@ fn it_elims_a_reactive_play_play() {
 
 	take_turn(&mut game, "Alice clues 4 to Cathy");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToPlay);
 
 	take_turn(&mut game, "Bob plays b1, drawing p1");
-	assert_eq!(&game.meta[game.state.hands[Player::Cathy as usize][3]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][3]].status, CardStatus::CalledToPlay);
 
 	// Since Bob cannot play a known 3, Cathy can't write !playable on slot 1.
 	assert!(["r1", "y1", "g1", "b1", "p1"].iter().all(|i| game.common.thoughts[game.state.hands[Player::Cathy as usize][0]].inferred.contains(game.state.expand_short(i))));
@@ -111,11 +111,13 @@ fn it_understands_a_reactive_dc_play() {
 
 	take_turn(&mut game, "Alice clues blue to Cathy");
 
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToDiscard);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToDiscard);
 	// ex_asserts::has_inferences(&game, None, Player::Bob, 1, &["r1", "y1", "b1", "p1"]);
 	assert!(game.common.thinks_trash(&game.frame(), Player::Bob as usize).contains(&game.state.hands[Player::Bob as usize][0]));
 
-	assert_eq!(&game.meta[game.state.hands[Player::Cathy as usize][0]].status, &CardStatus::CalledToPlay);
+	take_turn(&mut game, "Bob discards r3 (slot 1), drawing p3");
+
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][0]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Cathy, 1, &["r1", "y1", "g1", "p1"]);
 }
 
@@ -138,10 +140,10 @@ fn it_elims_a_reactive_dc_play() {
 	});
 
 	take_turn(&mut game, "Alice clues green to Cathy");
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToDiscard);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToDiscard);
 
 	take_turn(&mut game, "Bob discards b1, drawing b4");
-	assert_eq!(&game.meta[game.state.hands[Player::Cathy as usize][3]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][3]].status, CardStatus::CalledToPlay);
 
 	// Since Bob cannot discard a known 5, Cathy can't write !playable on slot 1.
 	assert!(["r1", "r2", "y1", "b1"].iter().all(|i| game.common.thoughts[game.state.hands[Player::Cathy as usize][0]].inferred.contains(game.state.expand_short(i))));
@@ -165,7 +167,7 @@ fn it_reacts_to_a_reactive_finesse() {
 	take_turn(&mut game, "Cathy clues 3 to Bob");
 
 	// We should play slot 1 to target Bob's r2.
-	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][0]].status, CardStatus::CalledToPlay);
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["r1"]);
 
 	let action = game.take_action();
@@ -191,5 +193,5 @@ fn it_doesnt_target_an_unclued_dupe() {
 	take_turn(&mut game, "Cathy clues green to Bob");
 
 	// We should discard slot 5 (so that Bob plays slot 2).
-	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][4]].status, &CardStatus::CalledToDiscard);
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][4]].status, CardStatus::CalledToDiscard);
 }

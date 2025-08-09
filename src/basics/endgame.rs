@@ -6,7 +6,7 @@ use itertools::Itertools;
 use log::info;
 
 use crate::basics::action::{Action, PerformAction};
-use crate::basics::card::{IdOptions, Identifiable, Identity, MatchOptions};
+use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions};
 use crate::basics::game::Game;
 use crate::basics::player::Link;
 use crate::basics::util;
@@ -55,7 +55,7 @@ impl EndgameSolver {
 		EndgameSolver { simple_cache: HashMap::new(), simpler_cache: HashMap::new(), if_cache: HashMap::new(), success_rate: Vec::new(), monte_carlo }
 	}
 
-	pub fn solve_game(&mut self, game: &Game, player_turn: usize) -> Result<(PerformAction, Frac), String> {
+	pub fn solve_game(&mut self, game: &Game) -> Result<(PerformAction, Frac), String> {
 		let deadline = Instant::now() + Duration::from_secs(1);
 		let (remaining_ids, own_ids) = find_remaining_ids(game);
 
@@ -93,7 +93,7 @@ impl EndgameSolver {
 				}
 			}
 
-			match self.winnable(&hypo_game, player_turn, &remaining_ids, 0, &deadline) {
+			match self.winnable(&hypo_game, game.state.our_player_index, &remaining_ids, 0, &deadline) {
 				Err(_) => {
 					log::set_max_level(level);
 					return Err("couldn't find a winning strategy.".to_owned());
@@ -224,7 +224,7 @@ impl EndgameSolver {
 			}
 
 			info!("\n{}", format!("arrangement {} {}", game.state.our_hand().iter().map(|&o| game.state.log_iden(&game.state.deck[o])).join(","), prob).purple());
-			let all_actions = self.possible_actions(&game, player_turn, &remaining, &deadline);
+			let all_actions = self.possible_actions(&game, state.our_player_index, &remaining, &deadline);
 
 			if all_actions.is_empty() {
 				info!("couldn't find any valid actions");
@@ -234,7 +234,7 @@ impl EndgameSolver {
 			info!("{}", format!("possible actions: {:?}", all_actions.iter().map(|(action,_)| action.fmt(&game)).join(", ")).green());
 
 			let hypo_games = EndgameSolver::gen_hypo_games(&game, &remaining, all_actions.iter().all(|(p,_)| p.is_clue()));
-			let best_result = self.optimize(hypo_games, all_actions, player_turn, 0, &deadline);
+			let best_result = self.optimize(hypo_games, all_actions, state.our_player_index, 0, &deadline);
 
 			if let Ok((performs, winrate)) = best_result {
 				info!("arrangement winnable! {} (winrate {})", performs.iter().map(|perform| perform.fmt(&game)).join(","), winrate);
@@ -305,8 +305,29 @@ impl EndgameSolver {
 	}
 
 	fn possible_actions(&mut self, game: &Game, player_turn: usize, remaining: &RemainingMap, deadline: &Instant) -> Vec<(PerformAction, Vec<Identity>)> {
-		let Game { common, state, .. } = game;
+		let Game { common, state, meta, .. } = game;
 		let mut actions = Vec::new();
+
+		let try_action = |solver: &mut EndgameSolver, perform: PerformAction| {
+			match solver.winnable_if(state, player_turn, &perform, remaining, 0, deadline) {
+				SimpleResult::Unwinnable => None,
+				SimpleResult::WinnableWithDraws(winnable_draws) => Some((perform, winnable_draws)),
+				SimpleResult::AlwaysWinnable => Some((perform, Vec::new()))
+			}
+		};
+
+		if let Some(urgent) = state.hands[player_turn].iter().find(|o| meta[**o].urgent) {
+			let perform = if meta[*urgent].status == CardStatus::CalledToPlay {
+				PerformAction::Play { table_id: Some(game.table_id), target: *urgent }
+			} else {
+				PerformAction::Discard { table_id: Some(game.table_id), target: *urgent }
+			};
+
+			return match try_action(self, perform) {
+				None => Vec::new(),
+				Some(r) => vec![r],
+			};
+		}
 
 		let playables = game.players[player_turn].thinks_playables(&game.frame(), player_turn);
 		for order in playables {
@@ -321,17 +342,9 @@ impl EndgameSolver {
 				},
 				Some(_) => {
 					let perform = PerformAction::Play { table_id: Some(game.table_id), target: order };
-					match self.winnable_if(state, player_turn, &perform, remaining, 0, deadline) {
-						SimpleResult::Unwinnable => {
-							// info!("unwinnable if play");
-							continue;
-						},
-						SimpleResult::WinnableWithDraws(winnable_draws) => {
-							actions.push((perform, winnable_draws));
-						}
-						SimpleResult::AlwaysWinnable => {
-							actions.push((perform, Vec::new()));
-						}
+					match try_action(self, perform) {
+						None => continue,
+						Some(r) => actions.push(r),
 					};
 				}
 			}
@@ -371,14 +384,9 @@ impl EndgameSolver {
 					return Vec::new();
 				}
 
-				match self.winnable_if(state, player_turn, &perform, remaining, 0, deadline) {
-					SimpleResult::Unwinnable => continue,
-					SimpleResult::WinnableWithDraws(winnable_draws) => {
-						actions.push((perform, winnable_draws));
-					}
-					SimpleResult::AlwaysWinnable => {
-						actions.push((perform, Vec::new()));
-					}
+				match try_action(self, perform) {
+					None => continue,
+					Some(r) => actions.push(r),
 				};
 			}
 		}

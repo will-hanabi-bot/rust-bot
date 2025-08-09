@@ -11,7 +11,7 @@ use log::info;
 use crate::basics::action::PerformAction;
 use crate::basics::card::{Card, Identifiable, Identity};
 use crate::basics::game::Game;
-use crate::basics::util::players_between;
+use crate::basics::util::players_upto;
 use crate::basics::{state::State};
 use super::{EndgameSolver, WinnableResult, UNWINNABLE, RemainingMap, remove_remaining};
 
@@ -92,7 +92,7 @@ impl EndgameSolver {
 			if must_start_endgame.len() == 1 {
 				let target = must_start_endgame[0];
 
-				if player_turn != target && players_between(state.num_players, player_turn, target).len() > state.clue_tokens {
+				if player_turn != target && players_upto(state.num_players, player_turn, target).len() > state.clue_tokens {
 					// println!("{} needs to start endgame, not enough clues to reach their turn", state.player_names[target]);
 					return true;
 				}
@@ -121,25 +121,24 @@ impl EndgameSolver {
 				}
 
 				let mut play_stacks = state.play_stacks.clone();
-
 				let mut action: PerformAction = PerformAction::Discard { table_id: Some(game.table_id), target: state.hands[player_turn][0] };
 
 				for i in 0..endgame_turns {
 					let player_index = (player_turn + i) % state.num_players;
 					let playables = game.players[player_index].thinks_playables(&game.frame(), player_index);
 
-					match playables.len() {
-						0 => continue,
-						1 => {
-							match state.deck[playables[0]].id() {
-								None => { return UNWINNABLE; },
-								Some(id) => {
-									action = PerformAction::Play { table_id: Some(game.table_id), target: playables[0] };
-									play_stacks[id.suit_index] = id.rank;
-								}
+					if playables.is_empty() {
+						continue;
+					}
+
+					match state.deck[playables[0]].id() {
+						None => continue,
+						Some(id) => {
+							if i == 0 {
+								action = PerformAction::Play { table_id: Some(game.table_id), target: playables[0] };
 							}
-						},
-						_ => { return UNWINNABLE; }
+							play_stacks[id.suit_index] = id.rank;
+						}
 					}
 				}
 

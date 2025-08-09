@@ -27,35 +27,33 @@ pub enum ReactorInterp {
 	Clue(ClueInterp),
 }
 
+impl Reactor {
+	fn check_missed(game: &mut Game, player_index: usize, action_order: usize) {
+		let Game { state, meta, common, .. } = game;
+
+		if let Some(urgent) = state.hands[player_index].iter().find(|&&o| meta[o].urgent) && action_order != *urgent {
+			let meta = &mut game.meta[*urgent];
+			warn!("removing status on {urgent}, didn't react appropriately");
+			meta.status = CardStatus::None;
+			meta.urgent = false;
+			meta.trash = false;
+			meta.focused = false;
+			if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+				meta.reasoning.push(state.turn_count);
+			}
+
+			common.thoughts[*urgent].inferred = common.thoughts[*urgent].old_inferred.unwrap_or_else(|| panic!("no old_inferred on {urgent}!"));
+			common.thoughts[*urgent].old_inferred = None;
+		}
+	}
+}
+
 impl Convention for Reactor {
 	fn interpret_clue(&self, prev: &Game, game: &mut Game, action: &ClueAction) {
 		let ClueAction { giver, target, .. } = &action;
-		let Game { state, .. } = game;
+		Reactor::check_missed(game, *giver, 99);
 
-		for &order in &state.hands[*giver] {
-			let meta = &mut game.meta[order];
-			if meta.urgent {
-				warn!("removing status on {order}, didn't react");
-				meta.status = CardStatus::None;
-				meta.urgent = false;
-				meta.trash = false;
-				meta.focused = false;
-				if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
-					meta.reasoning.push(state.turn_count);
-				}
-
-				for &o in &state.hands.concat() {
-					if game.meta[o].depends_on.is_some_and(|d| d == order) {
-						info!("removing associated dependency on {o}");
-						game.meta[o].depends_on = None;
-						if game.meta[o].reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
-							game.meta[o].reasoning.push(state.turn_count);
-						}
-					}
-				}
-			}
-		}
-
+		// Remove wc early instead of waiting for update_turn, so that we can establish a new wc
 		if let Some(wc) = &game.common.waiting && wc.reacter == *giver {
 			game.common.waiting = None;
 		}
@@ -130,6 +128,7 @@ impl Convention for Reactor {
 
 	fn interpret_discard(&self, prev: &Game, game: &mut Game, action: &DiscardAction) {
 		let DiscardAction { player_index, order, failed, .. } = action;
+		Reactor::check_missed(game, *player_index, *order);
 
 		if *failed {
 			warn!("bombed! not reacting");
@@ -148,6 +147,7 @@ impl Convention for Reactor {
 
 	fn interpret_play(&self, prev: &Game, game: &mut Game, action: &PlayAction) {
 		let PlayAction { player_index, order, .. } = action;
+		Reactor::check_missed(game, *player_index, *order);
 
 		if let Some(wc) = game.common.waiting.clone() {
 			Reactor::react_play(prev, game, *player_index, *order, &wc);
@@ -185,9 +185,8 @@ impl Convention for Reactor {
 
 			let mut solver = EndgameSolver::new(true);
 			let cloned_game = game.clone();
-			let player_index = state.our_player_index;
 
-			let result = solver.solve_game(&cloned_game, player_index);
+			let result = solver.solve_game(&cloned_game);
 			match result {
 				Ok((perform, _)) => return perform,
 				Err(err) => {

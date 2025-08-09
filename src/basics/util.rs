@@ -79,14 +79,13 @@ pub fn perform_to_action(state: &State, action: &PerformAction, player_index: us
 	}
 }
 
-/** Returns all player indices between the start (exclusive) and end (inclusive) in play order. */
-pub fn players_between(num_players: usize, start: usize, end: usize) -> Vec<usize> {
-	let gap = (end + num_players - start) % num_players;
+/** Returns all player indices between the start (inclusive) and end (exclusive) in play order. */
+pub fn players_upto(num_players: usize, mut start: usize, end: usize) -> Vec<usize> {
+	let mut indices = Vec::new();
 
-	if gap == 0 {
-		Vec::new()
+	while start != end {
+		indices.push(start);
+		start = (start + 1) % num_players;
 	}
-	else {
-		(1..gap).map(|inc| (start + inc) % num_players).collect()
-	}
+	indices
 }

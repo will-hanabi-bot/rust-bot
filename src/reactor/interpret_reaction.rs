@@ -144,9 +144,11 @@ impl Reactor {
 		let order = wc.receiver_hand[target_slot - 1];
 		let meta = &mut meta[order];
 
-		meta.status = CardStatus::CalledToDiscard;
+		common.thoughts[order].old_inferred = Some(common.thoughts[order].inferred);
 		common.thoughts[order].inferred.retain(|i| !prev.state.is_critical(i));
+		meta.status = CardStatus::CalledToDiscard;
 		meta.trash = true;
+
 		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
 			meta.reasoning.push(state.turn_count);
 		}
@@ -157,9 +159,11 @@ impl Reactor {
 		let order = wc.receiver_hand[target_slot - 1];
 		let meta = &mut meta[order];
 
-		meta.status = CardStatus::CalledToPlay;
+		common.thoughts[order].old_inferred = Some(common.thoughts[order].inferred);
 		common.thoughts[order].inferred.retain(|i| state.is_playable(i));
+		meta.status = CardStatus::CalledToPlay;
 		meta.focused = true;
+
 		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
 			meta.reasoning.push(state.turn_count);
 		}

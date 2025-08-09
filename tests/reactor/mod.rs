@@ -12,6 +12,7 @@ mod stable;
 mod reactive;
 mod invert;
 mod variants;
+mod mistakes;
 
 #[test]
 fn it_understands_good_touch() {
@@ -101,7 +102,7 @@ fn it_understands_a_reverse_reactive_clue() {
 	take_turn(&mut game, "Alice clues 4 to Bob");
 
 	// Cathy is called to play g1.
-	assert_eq!(&game.meta[game.state.hands[Player::Cathy as usize][1]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][1]].status, CardStatus::CalledToPlay);
 
 	take_turn(&mut game, "Bob plays b1, drawing y3");
 
@@ -128,10 +129,12 @@ fn it_understands_targeting_dupes() {
 	take_turn(&mut game, "Cathy clues blue to Bob");
 
 	// Alice is called to play slot 4.
-	assert_eq!(&game.meta[game.state.hands[Player::Alice as usize][3]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][3]].status, CardStatus::CalledToPlay);
+
+	take_turn(&mut game, "Alice plays r1 (slot 4)");
 
 	// Bob is called to discard slot 2.
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][1]].status, &CardStatus::CalledToDiscard);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][1]].status, CardStatus::CalledToDiscard);
 }
 
 #[test]
@@ -154,7 +157,7 @@ fn it_understands_a_known_delayed_stable_play() {
 	take_turn(&mut game, "Cathy clues yellow to Bob");
 
 	// Bob is called to play g3.
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToPlay);
 
 	let action = game.take_action();
 
@@ -180,7 +183,7 @@ fn it_understands_an_unknown_delayed_stable_play() {
 	take_turn(&mut game, "Cathy clues yellow to Bob");
 
 	// Bob is called to play g2.
-	assert_eq!(&game.meta[game.state.hands[Player::Bob as usize][0]].status, &CardStatus::CalledToPlay);
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToPlay);
 
 	let action = game.take_action();
 

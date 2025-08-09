@@ -222,13 +222,14 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 }
 
 fn parse_slots(state: &State, parts: &Vec<&str>, parts_index: usize, expect_one: bool, insufficient_msg: &str) -> Vec<usize> {
-	if parts.len() < parts_index + 1 {
+
+	if parts.len() < parts_index + 1 || !parts[parts_index - 1].contains("slot") {
 		panic!("Not enough arguments provided {} in '{}', needs '(slot x)'", insufficient_msg, parts.join(" "));
 	}
 
 	let original = format!("{} {}", parts[parts_index - 1], parts[parts_index]);
 
-	let slots: Vec<usize> = parts[parts_index][0..parts[parts_index].len() - 1].split(",").map(|s| s.parse().unwrap()).collect();
+	let slots: Vec<usize> = parts[parts_index].trim_end_matches(|c: char| !c.is_numeric()).split(",").map(|s| s.parse().unwrap()).collect();
 	if slots.is_empty() || slots.iter().any(|&slot| slot < 1 || slot > state.our_hand().len()) {
 		panic!("Failed to parse '{}'", parts.join(" "));
 	}

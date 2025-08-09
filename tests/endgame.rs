@@ -43,7 +43,7 @@ fn it_clues_to_start_b45_endgame() {
 
 	assert_eq!(game.state.cards_left, 1);
 
-	match EndgameSolver::new(true).solve_game(&game, Player::Alice as usize) {
+	match EndgameSolver::new(true).solve_game(&game) {
 		Err(msg) => panic!("Game should be winnable! {msg}"),
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
@@ -80,7 +80,7 @@ fn it_clues_to_start_endgame_on_a_double_player() {
 
 	assert_eq!(game.state.cards_left, 1);
 
-	match EndgameSolver::new(true).solve_game(&game, Player::Alice as usize) {
+	match EndgameSolver::new(true).solve_game(&game) {
 		Err(msg) => panic!("Game should be winnable! {msg}"),
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
@@ -118,7 +118,7 @@ fn it_plays_to_start_simple_endgame() {
 
 	assert_eq!(game.state.cards_left, 1);
 
-	match EndgameSolver::new(true).solve_game(&game, Player::Alice as usize) {
+	match EndgameSolver::new(true).solve_game(&game) {
 		Err(msg) => panic!("Game should be winnable! {msg}"),
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
@@ -156,7 +156,7 @@ fn it_plays_to_start_endgame_when_other_has_dupes() {
 
 	assert_eq!(game.state.cards_left, 1);
 
-	match EndgameSolver::new(true).solve_game(&game, Player::Alice as usize) {
+	match EndgameSolver::new(true).solve_game(&game) {
 		Err(msg) => panic!("Game should be winnable! {msg}"),
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
@@ -202,7 +202,7 @@ fn it_plays_to_start_a_complex_endgame_where_all_cards_are_seen() {
 	// Alice plays p3 (1 left), Bob stalls, Cathy stalls
 	// Alice plays p4 (0 left), Bob plays p5, Cathy plays g5
 	// Alice plays r5.
-	match EndgameSolver::new(true).solve_game(&game, Player::Alice as usize) {
+	match EndgameSolver::new(true).solve_game(&game) {
 		Err(msg) => panic!("Game should be winnable! {msg}"),
 		Ok((perform, winrate)) => {
 			assert_eq!(winrate, Frac::ONE);
@@ -240,7 +240,7 @@ fn it_calculates_basic_winrate_correctly() {
 
 	assert_eq!(game.state.cards_left, 2);
 
-	match EndgameSolver::new(false).solve_game(&game, Player::Alice as usize) {
+	match EndgameSolver::new(false).solve_game(&game) {
 		Err(msg) => panic!("Game should be winnable! {msg}"),
 		Ok((perform, winrate)) => {
 			// We win if Bob draws y5, and lose if Bob doesn't. There are 6 locations that y5 could be.

@@ -153,21 +153,14 @@ impl Player {
 
 	/** Returns whether the order is trash (either basic trash or already saved). */
 	pub fn order_trash(&self, frame: &Frame, order: usize) -> bool {
-		let ConvData { status, trash, depends_on, .. } = &frame.meta[order];
+		let ConvData { status, trash, .. } = &frame.meta[order];
 
 		if self.thoughts[order].possible.iter().all(|id| self.is_trash(frame, id, order)) {
 			return true;
 		}
 
 		if *trash || *status == CardStatus::CalledToDiscard {
-			if let Some(depends) = depends_on {
-				if frame.state.hands.concat().contains(depends) {
-					warn!("{order} depends on {depends:?}!");
-				}
-			}
-			else {
-				return true;
-			}
+			return true;
 		}
 
 		self.thoughts[order].possibilities().iter().all(|id| self.is_trash(frame, id, order))
@@ -202,13 +195,6 @@ impl Player {
 		let linked_orders = self.linked_orders(state);
 
 		state.hands[player_index].iter().filter_map(|&order| {
-			if let Some(depends) = &meta[order].depends_on {
-				if state.hands.concat().contains(depends) {
-					warn!("{order} depends on {depends:?}!");
-					return None;
-				}
-			}
-
 			if meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
 				return Some(order);
 			}

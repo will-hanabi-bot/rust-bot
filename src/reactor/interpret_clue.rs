@@ -7,9 +7,10 @@ use crate::basics::card::{CardStatus, Identifiable, Identity};
 use crate::basics::clue::{Clue, ClueKind};
 use crate::basics::game::frame::Frame;
 use crate::basics::game::Game;
+use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::WaitingConnection;
 use crate::basics::state::State;
-use crate::basics::util::players_between;
+use crate::basics::util::players_upto;
 use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
@@ -255,20 +256,22 @@ impl Reactor {
 		let ClueAction { giver, target: receiver, clue, .. } = action;
 
 		info!("interpreting reactive clue!");
+		info!("reacter: {:?} ({}), receiver: {:?} ({})", state.hands[reacter], state.player_names[reacter], state.hands[*receiver], state.player_names[*receiver]);
 
 		let focus_slot = Reactor::reactive_focus(state, *receiver, action);
 
+		common.waiting = Some(WaitingConnection {
+			giver: *giver,
+			reacter,
+			receiver: *receiver,
+			receiver_hand: state.hands[*receiver].clone(),
+			clue: *clue,
+			focus_slot,
+			inverted: false,
+			turn: state.turn_count
+		});
+
 		if *receiver == state.our_player_index {
-			common.waiting = Some(WaitingConnection {
-				giver: *giver,
-				reacter,
-				receiver: *receiver,
-				receiver_hand: state.hands[*receiver].clone(),
-				clue: *clue,
-				focus_slot,
-				inverted: false,
-				turn: state.turn_count
-			});
 			return Some(ClueInterp::Reactive);
 		}
 
@@ -298,7 +301,7 @@ impl Reactor {
 
 						match all_trash.first() {
 							None => {
-								warn!("Reactive clue but receiver had no playable or trash targets!");
+								warn!("reactive clue but receiver had no playable or trash targets!");
 								None
 							}
 							Some((index, target)) => {
@@ -316,25 +319,21 @@ impl Reactor {
 								}
 
 								let react_order = state.hands[reacter][react_slot - 1];
-								let receive_order = **target;
-
 								let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
 								if prev_plays.contains(&react_order) {
 									warn!("attempted play+dc would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
 									return None;
 								}
 
+								common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
 								Reactor::target_play(game, action, react_order, true, false)?;
-								Reactor::target_discard(game, action, receive_order, false);
-								Reactor::elim_play_dc(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
-								game.meta[receive_order].depends_on = Some(react_order);
 
 								info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 								Some(ClueInterp::Reactive)
 							}
 						}
 					}
-					Some((index, target)) => {
+					Some((index, _)) => {
 						let target_slot = index + 1;
 						let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
@@ -344,18 +343,14 @@ impl Reactor {
 						}
 
 						let react_order = state.hands[reacter][react_slot - 1];
-						let receive_order = *target;
-
 						let prev_trash = prev.common.thinks_trash(&prev.frame(), reacter);
 						if prev_trash.contains(&react_order) || (inverted && prev_trash.is_empty() && react_slot == 1) {
 							warn!("attempted dc+play would result in reacter naturally discarding {} {react_order}!", state.log_iden(&state.deck[react_order]));
 							return None;
 						}
 
+						common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
 						Reactor::target_discard(game, action, react_order, true);
-						Reactor::target_play(game, action, receive_order, false, false)?;
-						Reactor::elim_dc_play(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
-						game.meta[receive_order].depends_on = Some(react_order);
 
 						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 						Some(ClueInterp::Reactive)
@@ -380,7 +375,7 @@ impl Reactor {
 						).collect::<Vec<_>>();
 
 						if finesse_targets.is_empty() {
-							warn!("Reactive clue but receiver had no playable targets!");
+							warn!("reactive clue but receiver had no playable targets!");
 							return None;
 						}
 
@@ -401,11 +396,9 @@ impl Reactor {
 									return None;
 								}
 
+								common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
 								Reactor::target_play(game, action, react_order, true, false)?;
-								game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
-								Reactor::target_play(game, action, receive_order, false, false)?;
-								Reactor::elim_play_play(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
-								game.meta[receive_order].depends_on = Some(react_order);
+								game.common.thoughts[react_order].inferred = IdentitySet::single(game.state.deck[receive_order].id().unwrap().prev());
 
 								info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 								return Some(ClueInterp::Reactive);
@@ -431,11 +424,9 @@ impl Reactor {
 							return None;
 						}
 
+						common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
 						Reactor::target_play(game, action, react_order, true, false)?;
 						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
-						Reactor::target_play(game, action, receive_order, false, false)?;
-						Reactor::elim_play_play(&prev.state, &mut game.common, &mut game.meta, reacter, &game.state.hands[*receiver], focus_slot, target_slot);
-						game.meta[receive_order].depends_on = Some(react_order);
 
 						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
 						Some(ClueInterp::Reactive)
@@ -470,7 +461,7 @@ impl Reactor {
 		let ClueAction { giver, target: clue_target, .. } = action;
 
 		// Include possible delayed plays
-		let possible_conns = players_between(game.state.num_players, *giver, *clue_target).iter().flat_map(|&i| {
+		let possible_conns = players_upto(game.state.num_players, game.state.next_player_index(*giver), game.state.holder_of(target).unwrap()).iter().flat_map(|&i| {
 			let mut playables = game.common.thinks_playables(&game.frame(), i);
 
 			// If they have an urgent discard, they can't play a connecting card
@@ -503,6 +494,7 @@ impl Reactor {
 		if let Some(id) = game.state.deck[target].id() {
 			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(&id)) {
 				let conn_id = Identity { suit_index: id.suit_index, rank: id.rank - 1 };
+				game.common.thoughts[*conn_order].old_inferred = Some(game.common.thoughts[*conn_order].inferred);
 				game.common.thoughts[*conn_order].inferred.retain(|i| i == conn_id);
 
 				let meta = &mut game.meta[*conn_order];
@@ -543,11 +535,13 @@ impl Reactor {
 			meta.urgent = true;
 		}
 
-		info!("targeting play {}, infs {}", target, common.str_infs(state, target));
+		info!("targeting play {} ({}), infs {}{}", target, state.player_names[*clue_target], common.str_infs(state, target), if urgent { ", urgent" } else { "" });
 		Some(ClueInterp::RefPlay)
 	}
 
-	fn target_discard(game: &mut Game, _action: &ClueAction, target: usize, urgent: bool) {
+	fn target_discard(game: &mut Game, action: &ClueAction, target: usize, urgent: bool) {
+		let ClueAction { target: clue_target, .. } = action;
+
 		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
 		inferred.retain(|i| !game.state.is_critical(i));
 		game.common.thoughts[target].inferred = inferred;
@@ -564,7 +558,7 @@ impl Reactor {
 			meta.reasoning.push(state.turn_count);
 		}
 
-		info!("targeting discard {}, infs {}", target, common.str_infs(state, target));
+		info!("targeting discard {} ({}), infs {}{}", target, state.player_names[*clue_target], common.str_infs(state, target), if urgent { ", urgent" } else { "" });
 	}
 
 	fn ref_discard(prev: &Game, game: &mut Game, action: &ClueAction, stall: bool) -> Option<ClueInterp> {
