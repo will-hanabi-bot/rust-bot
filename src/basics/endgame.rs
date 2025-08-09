@@ -9,7 +9,7 @@ use crate::basics::action::{Action, PerformAction};
 use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions};
 use crate::basics::game::Game;
 use crate::basics::player::Link;
-use crate::basics::util;
+use crate::basics::util::{self, FastMap};
 use crate::basics::variant::{all_ids};
 use winnable::SimpleResult;
 
@@ -43,8 +43,8 @@ struct GameArr {
 
 #[derive(Default)]
 pub struct EndgameSolver {
-	simple_cache: HashMap<String, WinnableResult>,
-	simpler_cache: HashMap<String, bool>,
+	simple_cache: FastMap<WinnableResult>,
+	simpler_cache: FastMap<bool>,
 	if_cache: HashMap<String, SimpleResult>,
 	success_rate: Vec<HashMap<PerformAction, (Frac, usize)>>,
 	monte_carlo: bool,
@@ -52,7 +52,7 @@ pub struct EndgameSolver {
 
 impl EndgameSolver {
 	pub fn new(monte_carlo: bool) -> Self {
-		EndgameSolver { simple_cache: HashMap::new(), simpler_cache: HashMap::new(), if_cache: HashMap::new(), success_rate: Vec::new(), monte_carlo }
+		EndgameSolver { simple_cache: FastMap::default(), simpler_cache: FastMap::default(), if_cache: HashMap::new(), success_rate: Vec::new(), monte_carlo }
 	}
 
 	pub fn solve_game(&mut self, game: &Game) -> Result<(PerformAction, Frac), String> {

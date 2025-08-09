@@ -57,7 +57,7 @@ fn simulate_game(deck: &[Identity], variant: &Variant) -> GameSummary {
 
 	for i in 0..3 {
 		let player_names = vec!["Alice".to_string(), "Bob".to_string(), "Cathy".to_string()];
-		let state = State::new(player_names, i, variant.clone());
+		let state = State::new(player_names, i, Arc::new(variant.clone()));
 		let mut game = Game::new(0, state, false, Arc::new(Reactor));
 		game.catchup = true;
 
@@ -136,7 +136,7 @@ fn simulate_game(deck: &[Identity], variant: &Variant) -> GameSummary {
 		score: games[0].state.score(),
 		result,
 		notes: games.iter().map(|game| (0..game.state.card_order).map(|i|
-			game.notes.get(&i).map_or("".to_owned(), |note| note.full.to_owned())).collect()
+			game.notes.get(&(i as u64)).map_or("".to_owned(), |note| note.full.to_owned())).collect()
 		).collect()
 	}
 }

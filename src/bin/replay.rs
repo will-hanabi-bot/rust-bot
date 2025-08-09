@@ -95,7 +95,7 @@ async fn main() {
 	let (debug_sender, mut debug_receiver) = mpsc::unbounded_channel::<DebugCommand>();
 	console::spawn_console(debug_sender);
 
-	let state = State::new(players, index, variant);
+	let state = State::new(players, index, Arc::new(variant));
 	let mut game = Game::new(0, state, false, Arc::new(Reactor));
 	game.catchup = true;
 

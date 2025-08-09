@@ -1,8 +1,11 @@
+use std::hash::Hasher;
+
 use crate::basics::card::Identity;
-use crate::basics::{clue::{Clue, ClueKind}, game::Game, state::State, variant::colourable_suits};
+use crate::basics::{clue::{Clue, ClueKind}, game::Game, state::State};
 use crate::reactor::ClueInterp;
 
 use super::clue::BaseClue;
+use ahash::AHasher;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
@@ -132,6 +135,49 @@ impl Action {
 		Action::Interp(InterpAction { interp })
 	}
 
+	pub fn hash(&self) -> u64 {
+		let mut hasher = AHasher::default();
+
+		match self {
+			Action::Clue(ClueAction { giver, target, clue, .. }) => {
+				hasher.write_u8(0);
+				hasher.write_u32(*giver as u32);
+				hasher.write_u32(*target as u32);
+				hasher.write_u8(clue.kind as u8);
+				hasher.write_u8(clue.value as u8);
+			}
+			Action::Play(PlayAction { player_index, suit_index, rank, order }) => {
+				hasher.write_u8(1);
+				hasher.write_u32(*player_index as u32);
+				hasher.write_u32(*suit_index as u32);
+				hasher.write_u8(*rank as u8);
+				hasher.write_u8(*order as u8);
+			}
+			Action::Discard(DiscardAction { player_index, suit_index, rank, failed, order }) => {
+				hasher.write_u8(2);
+				hasher.write_u32(*player_index as u32);
+				hasher.write_u32(*suit_index as u32);
+				hasher.write_u8(*rank as u8);
+				hasher.write_u8(*failed as u8);
+				hasher.write_u8(*order as u8);
+			}
+			Action::Draw(DrawAction { player_index, suit_index, rank, order, .. }) => {
+				hasher.write_u8(3);
+				hasher.write_u32(*player_index as u32);
+				hasher.write_u32(*suit_index as u32);
+				hasher.write_u8(*rank as u8);
+				hasher.write_u8(*order as u8);
+			}
+			Action::Turn(_) => (),
+			Action::Status(_) => (),
+			Action::GameOver(_) => (),
+			Action::Strike(_) => (),
+			Action::Interp(_) => ()
+		};
+
+		hasher.finish()
+	}
+
 	pub fn fmt(&self, state: &State) -> String {
 		let log_id = |suit_index: &i32, rank: &i32|
 			if *suit_index == -1 || *rank == -1 {
@@ -143,7 +189,7 @@ impl Action {
 		match self {
 			Action::Clue(ClueAction { giver, target, clue, .. }) => {
 				let value = match clue.kind {
-					ClueKind::COLOUR => colourable_suits(&state.variant)[clue.value].to_lowercase(),
+					ClueKind::COLOUR => state.variant.colourable_suits[clue.value].to_lowercase(),
 					ClueKind::RANK => clue.value.to_string(),
 				};
 				format!("{} clues {} to {}", state.player_names[*giver], value, state.player_names[*target])

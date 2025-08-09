@@ -17,16 +17,33 @@ pub struct Variant {
 	pub id: u32,
 	pub name: String,
 	pub suits: Vec<String>,
+	pub colourable_suits: Vec<String>,
 	pub short_forms: Vec<String>,
 }
 
 impl Variant {
-	pub fn new(id: u32, name: &str, suits: &[&str], short_forms: &[&str]) -> Self {
+	pub fn new(id: u32, name: &str, suit_strs: &[&str], short_strs: &[&str]) -> Self {
+		let mut suits = Vec::new();
+		let mut short_forms = Vec::new();
+		let mut colourable_suits = Vec::new();
+
+		for i in 0..suit_strs.len() {
+			let suit = suit_strs[i].to_string();
+			let colourable = !NO_COLOUR.is_match(&suit);
+			suits.push(suit.clone());
+			short_forms.push(short_strs[i].to_string());
+
+			if colourable {
+				colourable_suits.push(suit);
+			}
+		}
+
 		Self {
 			id,
 			name: name.to_string(),
-			suits: suits.iter().map(|&s| s.to_string()).collect(),
-			short_forms: short_forms.iter().map(|&s| s.to_string()).collect()
+			suits,
+			colourable_suits,
+			short_forms
 		}
 	}
 }
@@ -83,7 +100,9 @@ impl VariantManager {
 			short_forms.push(short);
 		}
 
-		Variant { id, name, suits, short_forms }
+		let colourable_suits = suits.iter().filter(|suit| !NO_COLOUR.is_match(suit)).map(|suit| suit.to_string()).collect();
+
+		Variant { id, name, suits, colourable_suits, short_forms }
 	}
 }
 
@@ -97,10 +116,6 @@ pub static BROWNISH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Brown|Muddy
 pub static DARK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Black|Dark|Gray|Cocoa").unwrap());
 pub static PRISM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Prism").unwrap());
 pub static NO_COLOUR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"White|Gray|Light|Null|Rainbow|Omni|Prism").unwrap());
-
-pub fn colourable_suits(variant: &Variant) -> Vec<String> {
-	variant.suits.iter().filter(|suit| !NO_COLOUR.is_match(suit)).map(|suit| suit.to_string()).collect()
-}
 
 pub fn all_ids(variant: &Variant) -> impl Iterator<Item = Identity> {
 	(0..variant.suits.len()).flat_map(move |suit_index|
@@ -128,10 +143,10 @@ pub fn id_touched(id: Identity, variant: &Variant, clue: &BaseClue) -> bool {
 		}
 
 		if PRISM.is_match(suit) {
-			return ((rank - 1) % colourable_suits(variant).len()) == *value;
+			return ((rank - 1) % variant.colourable_suits.len()) == *value;
 		}
 
-		variant.suits[suit_index] == colourable_suits(variant)[*value]
+		variant.suits[suit_index] == variant.colourable_suits[*value]
 	}
 	else {
 		if BROWNISH.is_match(suit) {

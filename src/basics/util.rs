@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
+
+use nohash_hasher::NoHashHasher;
+
 use super::action::{Action, PerformAction};
 use crate::basics::action::GameOverAction;
 use crate::basics::clue::{BaseClue, Clue, ClueKind};
@@ -6,6 +11,8 @@ use crate::basics::variant::card_touched;
 use super::state::State;
 use super::player::Player;
 use super::card::{Identifiable, Identity, MatchOptions};
+
+pub type FastMap<V> = HashMap<u64, V, BuildHasherDefault<NoHashHasher<u64>>>;
 
 pub fn visible_find<F>(state: &State, player: &Player, id: Identity, options: MatchOptions, cond: F) -> Vec<usize> where F: Fn(usize, usize) -> bool {
 	let mut orders = Vec::new();

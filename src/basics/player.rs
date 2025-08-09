@@ -7,6 +7,7 @@ use crate::basics::util::visible_find;
 use super::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions, Thought};
 use super::state::State;
 use std::collections::{HashSet};
+use ahash::AHashSet;
 use itertools::Itertools;
 use log::{warn};
 
@@ -47,8 +48,8 @@ pub struct Player {
 	pub hypo_stacks: Vec<usize>,
 	pub links: Vec<Link>,
 
-	pub unknown_plays: HashSet<usize>,
-	pub hypo_plays: HashSet<usize>,
+	pub unknown_plays: AHashSet<usize>,
+	pub hypo_plays: AHashSet<usize>,
 
 	pub waiting: Option<WaitingConnection>,
 
@@ -66,8 +67,8 @@ impl Player {
 			all_inferred: all_possible,
 			hypo_stacks,
 			links: Vec::new(),
-			unknown_plays: HashSet::new(),
-			hypo_plays: HashSet::new(),
+			unknown_plays: AHashSet::new(),
+			hypo_plays: AHashSet::new(),
 			waiting: None,
 
 			certain_map: Vec::new(),
@@ -302,9 +303,9 @@ impl Player {
 	pub fn update_hypo_stacks(&mut self, frame: &Frame, ignore: &[usize]) {
 		let Frame { state, .. } = frame;
 		let mut hypo_stacks = state.play_stacks.clone();
-		let mut unknown_plays: HashSet<usize> = HashSet::new();
-		let mut played: HashSet<usize> = HashSet::new();
-		let mut unplayable: HashSet<usize> = HashSet::new();
+		let mut unknown_plays: AHashSet<usize> = AHashSet::new();
+		let mut played: AHashSet<usize> = AHashSet::new();
+		let mut unplayable: AHashSet<usize> = AHashSet::new();
 
 		let mut found_playable = true;
 		let mut good_touch_elim = IdentitySet::EMPTY;
@@ -355,7 +356,7 @@ impl Player {
 									}
 									else {
 										hypo_stacks[id.suit_index] = id.rank;
-										good_touch_elim.insert(*id);
+										good_touch_elim = good_touch_elim.with(*id);
 									}
 								}
 							}
@@ -368,7 +369,7 @@ impl Player {
 							else {
 								found_playable = true;
 								hypo_stacks[id.suit_index] = id.rank;
-								good_touch_elim.insert(id);
+								good_touch_elim = good_touch_elim.with(id);
 								played.insert(order);
 							}
 						}

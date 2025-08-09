@@ -6,6 +6,11 @@ pub struct IdentitySet(usize);
 impl IdentitySet {
 	pub const EMPTY: Self = IdentitySet(0);
 
+	pub fn value(&self) -> usize {
+		self.0
+	}
+
+	#[inline]
 	pub fn len(&self) -> usize {
 		self.0.count_ones() as usize
 	}
@@ -19,18 +24,20 @@ impl IdentitySet {
 		IdentitySet(1 << id.to_ord())
 	}
 
-	pub fn insert(&mut self, id: Identity) {
-		self.0 |= 1usize << id.to_ord();
+	pub fn with(&self, id: Identity) -> Self {
+		IdentitySet(self.0 | 1 << id.to_ord())
 	}
 
-	pub fn extend(&mut self, ids: &[Identity]) {
+	pub fn concat(&self, ids: &[Identity]) -> Self {
+		let mut val = self.0;
 		for id in ids {
-			self.insert(*id);
+			val |= 1 << id.to_ord();
 		}
+		IdentitySet(val)
 	}
 
 	pub fn contains(&self, id: Identity) -> bool {
-		let bit = 1usize << id.to_ord();
+		let bit = 1 << id.to_ord();
 		(self.0 & bit) != 0
 	}
 
@@ -87,11 +94,13 @@ impl IdentitySet {
 
 impl FromIterator<Identity> for IdentitySet {
 	fn from_iter<T: IntoIterator<Item = Identity>>(iter: T) -> Self {
-		let mut set = IdentitySet::EMPTY;
+		let mut val = 0;
+
 		for id in iter {
-			set.insert(id);
+			val += 1 << id.to_ord();
 		}
-		set
+
+		IdentitySet(val)
 	}
 }
 
@@ -126,12 +135,13 @@ mod test {
 
 	#[test]
 	fn it_inserts() {
-		let mut ids = IdentitySet::EMPTY;
+		let ids = IdentitySet::EMPTY;
 		let id = Identity { suit_index: 2, rank: 4 };
-		ids.insert(id);
+		let new_ids = ids.with(id);
 
-		assert!(ids.contains(id));
-		assert_eq!(ids.len(), 1);
+		assert!(new_ids.contains(id));
+		assert_eq!(new_ids.len(), 1);
+		assert_eq!(ids.len(), 0);
 	}
 
 	#[test]

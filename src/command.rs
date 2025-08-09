@@ -304,7 +304,7 @@ impl BotClient {
 	fn handle_init(&mut self, data: InitMessage) {
 		let InitMessage { table_id, player_names, our_player_index, options, .. } = data;
 		let variant = self.variant_manager.get_variant(&options.variant_name);
-		let state = State::new(player_names, our_player_index, variant.clone());
+		let state = State::new(player_names, our_player_index, Arc::new(variant.clone()));
 
 		self.table_id = Some(table_id);
 		self.game = Some(Game::new(table_id, state, true, Arc::new(Reactor)));
@@ -371,7 +371,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.6.1 (rust-bot)");
+			send_pm(&self.ws, who, "v0.6.2 (rust-bot)");
 		}
 	}
 

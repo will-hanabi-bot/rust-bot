@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use log::{info, warn};
 use std::mem;
+use std::sync::Arc;
 
 use crate::basics;
 use crate::basics::action::{Action, ClueAction};
@@ -40,10 +41,11 @@ impl Reactor {
 			// Overwrite game with prev
 			*game = prev.clone();
 			let Game { state, .. } = game;
-			while state.action_list.len() <= state.turn_count {
-				state.action_list.push(Vec::new());
+			let action_list = Arc::make_mut(&mut state.action_list);
+			if action_list.len() <= state.turn_count {
+				action_list.resize(state.turn_count + 1, Vec::new());
 			}
-			state.action_list[state.turn_count].push(Action::Clue(action.clone()));
+			action_list[state.turn_count].push(Action::Clue(action.clone()));
 			basics::on_clue(game, action);
 			basics::elim(game, true);
 			Reactor::interpret_reactive(prev, game, action, bob, true)

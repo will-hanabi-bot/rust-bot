@@ -1,13 +1,14 @@
-use std::sync::LazyLock;
+use std::hash::Hasher;
+use std::sync::{Arc, LazyLock};
 
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::variant::{all_ids, DARK};
 use super::action::Action;
 use super::clue::{BaseClue, Clue, ClueKind};
 use super::card::{Card, Identifiable, Identity, Thought};
-use super::variant::{card_touched, colourable_suits, Variant};
+use super::variant::{card_touched, Variant};
 
-use itertools::Itertools;
+use ahash::AHasher;
 use regex::Regex;
 
 #[derive(Debug, Clone)]
@@ -17,7 +18,7 @@ pub struct State {
 	pub strikes: u8,
 	pub hands: Vec<Vec<usize>>,
 	pub deck: Vec<Card>,
-	pub variant: Variant,
+	pub variant: Arc<Variant>,
 	pub all_ids: IdentitySet,
 	pub player_names: Vec<String>,
 	pub num_players: usize,
@@ -28,14 +29,14 @@ pub struct State {
 	pub play_stacks: Vec<usize>,
 	pub discard_stacks: Vec<Vec<usize>>,
 	pub max_ranks: Vec<usize>,
-	pub action_list: Vec<Vec<Action>>,
+	pub action_list: Arc<Vec<Vec<Action>>>,
 	pub current_player_index: usize,
 	pub endgame_turns: Option<usize>,
 	card_count: Vec<usize>,
 }
 
 impl State {
-	pub fn new(player_names: Vec<String>, our_player_index: usize, variant: Variant) -> Self {
+	pub fn new(player_names: Vec<String>, our_player_index: usize, variant: Arc<Variant>) -> Self {
 		let num_players = player_names.len();
 		let num_suits = variant.suits.len();
 
@@ -70,17 +71,40 @@ impl State {
 			play_stacks: vec![0; num_suits],
 			discard_stacks: vec![vec![0; 5]; num_suits],
 			max_ranks: vec![5; num_suits],
-			action_list: Vec::new(),
+			action_list: Arc::new(Vec::new()),
 			current_player_index: 0,
 			endgame_turns: None,
 		}
 	}
 
-	pub fn hash(&self) -> String {
-		let hands = self.hands.concat().iter().join(",");
-		let deck = self.deck.iter().map(|card| self.log_iden(card)).join(",");
+	pub fn hash(&self) -> u64 {
+		let mut hasher = AHasher::default();
 
-		format!("{},{},{},{:?}", deck, hands, self.clue_tokens, self.endgame_turns)
+		for hand in &self.hands {
+			hasher.write_usize(hand.len()); // keep structure info
+			for &card in hand {
+				hasher.write_usize(card);
+			}
+		}
+
+		hasher.write_usize(self.deck.len());
+		for card in &self.deck {
+			hasher.write_usize(card.id().map(Identity::to_ord).unwrap_or(0));
+		}
+
+		hasher.write_usize(self.clue_tokens);
+
+		match self.endgame_turns {
+			Some(turns) => {
+				hasher.write_u8(1);
+				hasher.write_usize(turns);
+			}
+			None => {
+				hasher.write_u8(0);
+			}
+		}
+
+		hasher.finish()
 	}
 
 	pub fn ended(&self) -> bool {
@@ -162,7 +186,7 @@ impl State {
 			}
 		}
 
-		for suit_index in 0..colourable_suits(&self.variant).len() {
+		for suit_index in 0..self.variant.colourable_suits.len() {
 			if !self.clue_touched(&self.hands[target], &BaseClue { kind: ClueKind::COLOUR, value: suit_index }).is_empty() {
 				clues.push(Clue { kind: ClueKind::COLOUR, value: suit_index, target });
 			}

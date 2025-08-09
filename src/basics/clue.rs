@@ -26,7 +26,7 @@ impl<'de> Deserialize<'de> for ClueKind {
 	}
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub struct BaseClue {
 	#[serde(rename="type")]
 	pub kind: ClueKind,
@@ -40,7 +40,10 @@ impl BaseClue {
 			ClueKind::RANK => &self.value.to_string(),
 		};
 		format!("({} to {})", value, state.player_names[target])
+	}
 
+	pub fn hash(&self) -> u64 {
+		(if self.kind == ClueKind::COLOUR { 0 } else { 10 }) + self.value as u64
 	}
 }
 

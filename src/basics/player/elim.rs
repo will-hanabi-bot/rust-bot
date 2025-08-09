@@ -70,10 +70,10 @@ impl Player {
 			let known_count = state.base_count(id) + self.certain_map[Identity::to_ord(id)].len();
 
 			if known_count == state.card_count(id) {
-				eliminated.insert(id);
+				eliminated = eliminated.with(id);
 				let (inner_changed, inner_recursive_ids) = self.update_map(state, id, Vec::new(), resets);
 				changed = changed || inner_changed;
-				recursive_ids.extend(&inner_recursive_ids);
+				recursive_ids = recursive_ids.concat(&inner_recursive_ids);
 			}
 		}
 
@@ -174,9 +174,7 @@ impl Player {
 
 	pub fn card_elim(&mut self, state: &State) -> Vec<usize> {
 		let mut resets = Vec::new();
-		self.certain_map.clear();
 		self.certain_map.resize(state.all_ids.len(), Vec::new());
-		self.cross_elim_candidates.clear();
 
 		let actual_id_opts = IdOptions { symmetric: self.is_common, ..Default::default() };
 		let symmetric_id_opts = IdOptions { symmetric: true, ..Default::default() };
@@ -201,6 +199,8 @@ impl Player {
 		let all_ids = IdentitySet::from_iter(all_ids(&state.variant));
 		self.basic_card_elim(state, &all_ids, &mut resets);
 		while self.cross_card_elim(state, &Vec::new(), &IdentitySet::EMPTY, &Vec::new(), 0, &mut resets) {}
+		self.certain_map.clear();
+		self.cross_elim_candidates.clear();
 		resets
 	}
 

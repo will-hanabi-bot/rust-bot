@@ -1,18 +1,17 @@
+use ahash::AHasher;
 use colored::Colorize;
 use itertools::Itertools;
 use log::{info, LevelFilter};
 use serde_json::json;
-use std::collections::{HashMap};
+use std::hash::Hasher;
 use std::sync::Arc;
 
-use super::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
-use crate::basics::action::{DrawAction, InterpAction};
-use crate::basics::card::{CardStatus, ConvData};
-use crate::basics::identity_set::IdentitySet;
 use crate::basics::{self, on_draw};
-use crate::basics::player::Link;
-use super::card::Identity;
-use super::player::Player;
+use crate::basics::action::{Action, ClueAction, DiscardAction,DrawAction, InterpAction, PerformAction, PlayAction, TurnAction};
+use crate::basics::card::{CardStatus, ConvData, Identity};
+use crate::basics::identity_set::IdentitySet;
+use crate::basics::player::{Link, Player};
+use crate::basics::util::FastMap;
 use crate::reactor::{ClueInterp, ReactorInterp};
 use super::state::State;
 use super::variant::all_ids;
@@ -46,12 +45,12 @@ pub struct Game {
 	pub players: Vec<Player>,
 	pub common: Player,
 	pub meta: Vec<ConvData>,
-	pub base: (State, Vec<ConvData>, Vec<Player>, Player),
+	pub base: Arc<(State, Vec<ConvData>, Vec<Player>, Player)>,
 	pub deck_ids: Vec<Option<Identity>>,
 	pub in_progress: bool,
 	pub catchup: bool,
 	pub convention: Arc<dyn Convention + Send + Sync>,
-	pub notes: HashMap<usize, Note>,
+	pub notes: FastMap<Note>,
 	pub last_move: Option<Interp>,
 	pub queued_cmds: Vec<(String, String)>,
 	pub next_interp: Option<ClueInterp>,
@@ -78,12 +77,12 @@ impl Game {
 			players: players.clone(),
 			common: common.clone(),
 			meta: Vec::new(),
-			base: (state, Vec::new(), players, common),
+			base: Arc::new((state, Vec::new(), players, common)),
 			deck_ids: Vec::new(),
 			in_progress,
 			catchup: false,
 			convention,
-			notes: HashMap::new(),
+			notes: FastMap::default(),
 			last_move: None,
 			queued_cmds: Vec::new(),
 			next_interp: None,
@@ -93,7 +92,7 @@ impl Game {
 	}
 
 	pub fn blank(&self) -> Self {
-		let (state, meta, players, common) = &self.base;
+		let (state, meta, players, common) = &*self.base;
 		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
 
 		// Copy over the deck ids, so that information about future cards is preserved
@@ -104,16 +103,28 @@ impl Game {
 		new_game
 	}
 
-	pub fn hash(&self) -> String {
-		let state = self.state.hash();
-		let hash_player = |player: &Player| {
-			(0..player.thoughts.len()).map(|i| player.str_infs(&self.state, i)).join(",")
-		};
-		let player_thoughts = self.players.iter().map(hash_player).join(",");
-		let common_thoughts = hash_player(&self.common);
-		let action_list = self.state.action_list.concat().iter().map(|action| format!("{action:?}")).join(",");
+	pub fn hash(&self) -> u64 {
+		let mut hasher = AHasher::default();
 
-		format!("{state},{player_thoughts},{common_thoughts},{action_list}")
+		hasher.write_u64(self.state.hash());
+
+		for player in &self.players {
+			for thought in &player.thoughts {
+				hasher.write_usize(thought.inferred.value());
+			}
+		}
+
+		for thought in &self.common.thoughts {
+			hasher.write_usize(thought.inferred.value());
+		}
+
+		for actions in &*self.state.action_list {
+			for action in actions {
+				hasher.write_u64(action.hash());
+			}
+		}
+
+		hasher.finish()
 	}
 
 	pub fn frame(&self) -> Frame {
@@ -130,10 +141,11 @@ impl Game {
 
 	pub fn handle_action(&mut self, action: &Action) {
 		let prev = &self.clone();
-		while self.state.action_list.len() <= self.state.turn_count {
-			self.state.action_list.push(Vec::new());
+		let action_list = Arc::make_mut(&mut self.state.action_list);
+		if action_list.len() <= self.state.turn_count {
+			action_list.resize(self.state.turn_count + 1, Vec::new());
 		}
-		self.state.action_list[self.state.turn_count].push(action.clone());
+		action_list[self.state.turn_count].push(action.clone());
 		match action {
 			Action::Clue(clue) => {
 				info!("{}", format!("Turn {}: {}", self.state.turn_count, action.fmt(&self.state)).yellow());
@@ -382,14 +394,14 @@ impl Game {
 				}
 			}
 
-			let prev_note = notes.get(&order);
+			let prev_note = notes.get(&(order as u64));
 			let write_note = match prev_note {
 				Some(prev_note) => note != prev_note.last && state.turn_count > prev_note.turn,
 				None => true
 			};
 
 			if write_note {
-				let prev_note = notes.remove(&order);
+				let prev_note = notes.remove(&(order as u64));
 				let mut full = prev_note.map(|n| format!("{} | ", n.full)).unwrap_or_else(|| "".to_owned());
 				full.push_str(&format!("t{}: {note}", state.turn_count));
 				let new_note = Note {
@@ -397,7 +409,7 @@ impl Game {
 					turn: state.turn_count,
 					full: full.to_string()
 				};
-				notes.insert(order, new_note);
+				notes.insert(order as u64, new_note);
 
 				if !self.catchup && self.in_progress {
 					self.queued_cmds.push((

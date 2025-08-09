@@ -65,7 +65,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 	let _ = rust_bot::logger::init();
 
 	let player_names = NAMES[..hands.len()].iter().map(|&name| name.to_string()).collect();
-    let state = State::new(player_names, 0, VARIANTS.get(test_options.variant).unwrap().clone());
+    let state = State::new(player_names, 0, Arc::new(VARIANTS.get(test_options.variant).unwrap().clone()));
     let mut game = Game::new(0, state, false, convention);
     game.catchup = true;
 
@@ -145,7 +145,7 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
     (test_options.init)(&mut game);
 
     basics::elim(&mut game, true);
-    game.base = (game.state.clone(), game.meta.clone(), game.players.clone(), game.common.clone());
+    game.base = Arc::new((game.state.clone(), game.meta.clone(), game.players.clone(), game.common.clone()));
 
     game
 }
