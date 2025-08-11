@@ -48,7 +48,7 @@ In a replay, the following commands are also supported (in addition to `hand`):
     - Instead of a turn number, `+` (next turn), `++` (next turn of the same player), `-`, and `--` can also be used.
 
 ## Self-play
-The bot can play games with copies of itself using `cargo run --release self_play [-- <options>]`. Possible options:
+The bot can play games with copies of itself using `cargo run --release --bin self_play [-- <options>]`. Possible options:
 - `games=<numGames>` sets the number of games to play (defaults to 1)
 - `seed=<seed>` sets the seed of the first game to be played (defaults to 0)
     - The seeding algorithm is different from the one used on hanab.live.
