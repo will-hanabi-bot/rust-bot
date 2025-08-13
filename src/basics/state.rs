@@ -107,8 +107,9 @@ impl State {
 		hasher.finish()
 	}
 
+	#[inline]
 	pub fn ended(&self) -> bool {
-		self.strikes == 3 || match self.endgame_turns {
+		self.strikes == 3 || self.score() == self.max_score() || match self.endgame_turns {
 			Some(turns) => turns == 0,
 			None => false,
 		}
@@ -118,10 +119,12 @@ impl State {
 		[0, 0, 5, 5, 4, 4, 3][self.num_players]
 	}
 
+	#[inline]
 	pub fn score(&self) -> usize {
 		self.play_stacks.iter().sum()
 	}
 
+	#[inline]
 	pub fn max_score(&self) -> usize {
 		self.max_ranks.iter().sum()
 	}
@@ -130,12 +133,13 @@ impl State {
 		self.max_score() - self.score()
 	}
 
+	#[inline]
 	pub fn pace(&self) -> i32 {
 		self.score() as i32 + self.cards_left as i32 + self.num_players as i32 - self.max_score() as i32
 	}
 
 	pub fn in_endgame(&self) -> bool {
-		self.pace() < self.num_players as i32
+		self.pace() < self.num_players as i32 || self.score() >= self.max_score() - 5
 	}
 
 	pub fn last_player_index(&self, player_index: usize) -> usize {

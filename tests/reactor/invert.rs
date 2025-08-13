@@ -30,7 +30,7 @@ fn it_reacts_to_a_response_inversion() {
 	let action = game.take_action();
 
 	// We should discard slot 2 urgently.
-	assert_eq!(action, PerformAction::Discard { table_id: Some(0), target: game.state.hands[Player::Alice as usize][1] });
+	assert_eq!(action, PerformAction::Discard { target: game.state.hands[Player::Alice as usize][1] });
 
 	take_turn(&mut game, "Alice discards r4 (slot 2)");
 

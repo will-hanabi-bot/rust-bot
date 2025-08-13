@@ -131,7 +131,22 @@ impl Convention for Reactor {
 		Reactor::check_missed(game, *player_index, *order);
 
 		if *failed {
-			warn!("bombed! not reacting");
+			warn!("bombed! clearing all information");
+
+			for &order in &game.state.hands.concat() {
+				let thought = &mut game.common.thoughts[order];
+				thought.inferred = thought.possible;
+				thought.old_inferred = None;
+				thought.info_lock = None;
+
+				let meta = &mut game.meta[order];
+				meta.status = CardStatus::None;
+				meta.focused = false;
+				meta.trash = false;
+				meta.urgent = false;
+			}
+
+			game.common.waiting = None;
 			return;
 		}
 
@@ -160,7 +175,7 @@ impl Convention for Reactor {
 	}
 
 	fn take_action(&self, game: &Game) -> PerformAction {
-		let Game { state, meta, table_id, .. } = game;
+		let Game { state, meta, .. } = game;
 		let frame = game.frame();
 		let me = game.me();
 
@@ -168,11 +183,11 @@ impl Convention for Reactor {
 			match urgent.status {
 				CardStatus::CalledToPlay => {
 					if !me.thoughts[urgent.order].possible.iter().all(|i| state.is_basic_trash(i)) {
-						return PerformAction::Play { table_id: Some(*table_id), target: urgent.order }
+						return PerformAction::Play { target: urgent.order }
 					}
 				}
 				CardStatus::CalledToDiscard => {
-					return PerformAction::Discard { table_id: Some(*table_id), target: urgent.order }
+					return PerformAction::Discard { target: urgent.order }
 				}
 				_ => {
 					warn!("Unexpected urgent card status {:?}", urgent.status);
@@ -211,7 +226,7 @@ impl Convention for Reactor {
 				let target = (state.our_player_index + offset) % state.num_players;
 				state.all_valid_clues(target)
 			}).map(|clue| {
-				let perform = util::clue_to_perform(&clue, *table_id);
+				let perform = util::clue_to_perform(&clue);
 				let action = util::perform_to_action(state, &perform, state.our_player_index, None);
 				(perform, action)
 			}).collect()
@@ -219,7 +234,7 @@ impl Convention for Reactor {
 		let num_clues = all_clues.len();
 
 		let all_plays = playable_orders.iter().map(|&order| {
-			(PerformAction::Play { table_id: Some(*table_id), target: order },
+			(PerformAction::Play { target: order },
 			match me.thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
 				Some(Identity { suit_index, rank }) => {
 					Action::play(state.our_player_index, order, suit_index as i32, rank as i32)
@@ -238,7 +253,7 @@ impl Convention for Reactor {
 
 		let all_discards = if cant_discard { Vec::new() } else {
 			trash_orders.iter().map(|&order| {
-				(PerformAction::Discard { table_id: Some(*table_id), target: order },
+				(PerformAction::Discard { target: order },
 				match me.thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
 					Some(Identity { suit_index, rank }) => {
 						Action::discard(state.our_player_index, order, suit_index as i32, rank as i32, false)
@@ -257,13 +272,13 @@ impl Convention for Reactor {
 			let chop = state.our_hand()[0];
 
 			all_actions.push((
-				PerformAction::Discard { table_id: Some(*table_id), target: chop },
+				PerformAction::Discard { target: chop },
 				Action::discard(state.our_player_index, chop, -1, -1, false)
 			));
 		}
 
 		if all_actions.is_empty() {
-			return PerformAction::Discard { table_id: Some(*table_id), target: me.locked_discard(state, state.our_player_index) };
+			return PerformAction::Discard { target: me.locked_discard(state, state.our_player_index) };
 		}
 
 		all_actions.iter().fold((f32::MIN, None), |(best_value, best), curr| {
@@ -291,15 +306,19 @@ impl Convention for Reactor {
 	}
 
 	fn find_all_clues(&self, game: &Game, player_index: usize) -> Vec<PerformAction> {
-		let Game { state, table_id, .. } = game;
+		let Game { state, .. } = game;
 
 		let level = log::max_level();
 		log::set_max_level(log::LevelFilter::Off);
 
-		let all_clues = (0..state.num_players)
-			.filter(|&i| i != player_index)
-			.flat_map(|i| state.all_valid_clues(i))
-			.filter_map(|clue| {
+		let mut all_clues = Vec::new();
+
+		for i in 0..state.num_players {
+			if i == player_index {
+				continue;
+			}
+
+			for clue in state.all_valid_clues(i) {
 				let base_clue = clue.to_base();
 				let list = state.clue_touched(&state.hands[clue.target], &base_clue);
 
@@ -307,14 +326,16 @@ impl Convention for Reactor {
 				let touched = state.clue_touched(&state.hands[clue.target], &base_clue);
 				// Do not simulate clues that touch only previously-clued trash
 				if touched.iter().all(|&o| state.deck[o].clued && state.is_basic_trash(state.deck[o].id().unwrap())) {
-					return None;
+					continue;
 				}
 				info!("{}", format!("===== Predicting value for ({}) =====", action.fmt(state)).green());
 				let value = Reactor::predict_value(game, &action);
 
-				(value > -5.0).then_some(util::clue_to_perform(&clue, *table_id))
-			})
-			.collect();
+				if value > -5.0 {
+					all_clues.push(util::clue_to_perform(&clue));
+				}
+			}
+		}
 
 		log::set_max_level(level);
 
@@ -322,15 +343,15 @@ impl Convention for Reactor {
 	}
 
 	fn find_all_discards(&self, game: &Game, player_index: usize) -> Vec<PerformAction> {
-		let Game { common, state, table_id, .. } = game;
+		let Game { common, state, .. } = game;
 		let trash = common.thinks_trash(&game.frame(), player_index);
 
 		if trash.is_empty() {
-			vec![PerformAction::Discard { table_id: Some(*table_id), target: state.hands[player_index][0] }]
+			vec![PerformAction::Discard { target: state.hands[player_index][0] }]
 		}
 		else {
 			vec![trash.into_iter().map(|o| {
-				PerformAction::Discard { table_id: Some(*table_id), target: o }
+				PerformAction::Discard { target: o }
 			}).next().unwrap()]
 		}
 	}

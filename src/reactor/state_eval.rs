@@ -9,7 +9,7 @@ use crate::basics::clue_result::{bad_touch_result, elim_result, playables_result
 
 impl Reactor {
 	fn get_result(game: &Game, hypo: &Game, action: &ClueAction) -> f32 {
-		let Game { state, common, .. } = game;
+		let Game { state, common, meta, .. } = game;
 		let Game { state: hypo_state, common: hypo_common, .. } = hypo;
 		let hypo_frame = hypo.frame();
 		let ClueAction { giver, target, list, clue } = &action;
@@ -21,10 +21,13 @@ impl Reactor {
 		let revealed_trash = hypo_common.thinks_trash(&hypo_frame, *target).iter().filter(|&o|
 			hypo_state.deck[*o].clued && !common.thinks_trash(&game.frame(), *target).contains(o)).count();
 
-		let bad_playable = state.hands.concat().into_iter().find(|o| hypo.meta[*o].status == CardStatus::CalledToPlay && !hypo.me().hypo_plays.contains(o));
+		let bad_playable = state.hands.concat().into_iter().find(|o|
+			meta[*o].status != CardStatus::CalledToPlay &&
+			hypo.meta[*o].status == CardStatus::CalledToPlay &&
+			!hypo.me().hypo_plays.contains(o));
 
 		if let Some(bad_playable) = bad_playable {
-			warn!("clue {} results in {} looking playable!", clue.fmt(state, *target), state.deck[bad_playable].id().map(|i| state.log_id(i)).unwrap_or(format!("order {bad_playable}")));
+			warn!("clue {} results in {} {} looking playable!", clue.fmt(state, *target), state.log_iden(&state.deck[bad_playable]), bad_playable);
 			return -100.0;
 		}
 
@@ -80,7 +83,7 @@ impl Reactor {
 	fn advance_game(game: &Game, action: &Action) -> Game {
 		match action {
 			Action::Clue(clue) => game.simulate_clue(clue, SimOpts { log: true, ..SimOpts::default() }),
-			_ => game.simulate_action(action)
+			_ => game.simulate_action(action, None)
 		}
 	}
 

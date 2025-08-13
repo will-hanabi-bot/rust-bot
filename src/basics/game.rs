@@ -91,12 +91,13 @@ impl Game {
 		}
 	}
 
-	pub fn blank(&self) -> Self {
+	pub fn blank(&self, keep_deck: bool) -> Self {
 		let (state, meta, players, common) = &*self.base;
 		let mut new_game = Game::new(self.table_id, state.clone(), self.in_progress, Arc::clone(&self.convention));
 
-		// Copy over the deck ids, so that information about future cards is preserved
-		new_game.deck_ids = self.deck_ids.clone();
+		if keep_deck {
+			new_game.deck_ids = self.deck_ids.clone();
+		}
 		new_game.meta = meta.clone();
 		new_game.players = players.clone();
 		new_game.common = common.clone();
@@ -234,7 +235,7 @@ impl Game {
 		hypo_game
 	}
 
-	pub fn simulate_action(&self, action: &Action) -> Self {
+	pub fn simulate_action(&self, action: &Action, draw: Option<Identity>) -> Self {
 		let level = log::max_level();
 		log::set_max_level(LevelFilter::Off);
 
@@ -249,13 +250,13 @@ impl Game {
 				if hypo_game.state.cards_left > 0 {
 					let order = hypo_game.state.card_order;
 
-					match self.deck_ids.get(order) {
-						Some(Some(Identity { suit_index, rank })) => {
+					match self.deck_ids.get(order).copied().flatten().or(draw) {
+						Some(Identity { suit_index, rank }) => {
 							hypo_game.handle_action(&Action::draw(
 								*player_index,
 								order,
-								*suit_index as i32,
-								*rank as i32,
+								suit_index as i32,
+								rank as i32,
 							));
 						}
 						_ => {
@@ -290,7 +291,7 @@ impl Game {
 
 		info!("{}", "------- STARTING REWIND -------".green());
 
-		let mut new_game = self.blank();
+		let mut new_game = self.blank(true);
 		new_game.catchup = true;
 		new_game.rewind_depth = self.rewind_depth + 1;
 
@@ -322,7 +323,7 @@ impl Game {
 	pub fn navigate(&self, turn: usize) -> Self {
 		info!("{}", format!("------- NAVIGATING (turn {turn}) -------").green());
 
-		let mut new_game = self.blank();
+		let mut new_game = self.blank(false);
 		let actions = &self.state.action_list;
 
 		if turn == 1 && new_game.state.our_player_index == 0 {

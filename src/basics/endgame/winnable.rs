@@ -121,7 +121,7 @@ impl EndgameSolver {
 				}
 
 				let mut play_stacks = state.play_stacks.clone();
-				let mut action: PerformAction = PerformAction::Discard { table_id: Some(game.table_id), target: state.hands[player_turn][0] };
+				let mut action: PerformAction = PerformAction::Discard { target: state.hands[player_turn][0] };
 
 				for i in 0..endgame_turns {
 					let player_index = (player_turn + i) % state.num_players;
@@ -135,7 +135,7 @@ impl EndgameSolver {
 						None => continue,
 						Some(id) => {
 							if i == 0 {
-								action = PerformAction::Play { table_id: Some(game.table_id), target: playables[0] };
+								action = PerformAction::Play { target: playables[0] };
 							}
 							play_stacks[id.suit_index] = id.rank;
 						}
@@ -151,7 +151,65 @@ impl EndgameSolver {
 		}
 	}
 
-	pub(super) fn winnable_simpler(&mut self, state: &State, player_turn: usize, remaining: &RemainingMap, depth: usize, deadline: &Instant) -> bool {
+	pub(super) fn clueless_winnable(&mut self, state: &State, player_turn: usize, deadline: &Instant) -> Option<PerformAction> {
+		if state.score() == state.max_score() {
+			return Some(PerformAction::Play { target: 99 });
+		}
+
+		let hash = state.hash();
+		if self.clueless_cache.contains_key(&hash) {
+			return self.clueless_cache[&hash];
+		}
+
+		if Instant::now() > *deadline {
+			return None;
+		}
+
+		if EndgameSolver::unwinnable_state(state, player_turn) {
+			self.clueless_cache.insert(hash, None);
+			return None;
+		}
+
+		let mut discardable = None;
+
+		for &order in &state.hands[player_turn] {
+			let card = &state.deck[order];
+			if let Some(id) = card.id() {
+				if state.is_playable(id) {
+					let action = PerformAction::Play { target: order };
+					let new_state = EndgameSolver::advance_state(state, &action, player_turn, None);
+
+					if self.clueless_winnable(&new_state, state.next_player_index(player_turn), deadline).is_some() {
+						return Some(action);
+					}
+				}
+			}
+			else if discardable.is_none() {
+				discardable = Some(order);
+			}
+		}
+
+		if state.clue_tokens > 0 {
+			let action = PerformAction::Rank { target: 0, value: 0 };
+			let new_state = EndgameSolver::advance_state(state, &action, player_turn, None);
+
+			if self.clueless_winnable(&new_state, state.next_player_index(player_turn), deadline).is_some() {
+				return Some(action);
+			}
+		}
+
+		if let Some(order) = discardable {
+			let action = PerformAction::Discard { target: order };
+			let new_state = EndgameSolver::advance_state(state, &action, player_turn, None);
+
+			if self.clueless_winnable(&new_state, state.next_player_index(player_turn), deadline).is_some() {
+				return Some(action);
+			}
+		}
+		None
+	}
+
+	pub(super) fn winnable_simpler(&mut self, state: &State, player_turn: usize, remaining: &RemainingMap, deadline: &Instant) -> bool {
 		if state.score() == state.max_score() {
 			return true;
 		}
@@ -174,20 +232,20 @@ impl EndgameSolver {
 			let card = &state.deck[order];
 			if let Some(id) = card.id() {
 				if state.is_playable(id) {
-					possible_actions.push(PerformAction::Play { table_id: None, target: order });
+					possible_actions.push(PerformAction::Play { target: order });
 				}
 				else if state.is_basic_trash(id) && !discardable {
-					possible_actions.push(PerformAction::Discard { table_id: None, target: order });
+					possible_actions.push(PerformAction::Discard { target: order });
 					discardable = true;
 				}
 			}
 			else if !discardable {
-				possible_actions.push(PerformAction::Discard { table_id: None, target: order });
+				possible_actions.push(PerformAction::Discard { target: order });
 			}
 		}
 
 		if state.clue_tokens > 0 {
-			possible_actions.push(PerformAction::Rank { table_id: None, target: 0, value: 0 });
+			possible_actions.push(PerformAction::Rank { target: 0, value: 0 });
 		}
 
 		possible_actions.sort_by_key(|perform| {
@@ -201,7 +259,7 @@ impl EndgameSolver {
 
 		// info!("possible winnable simpler actions for {}: {:?}", state.player_names[player_turn], possible_actions);
 
-		let winnable = possible_actions.iter().any(|action| match self.winnable_if(state, player_turn, action, remaining, depth, deadline) {
+		let winnable = possible_actions.iter().any(|action| match self.winnable_if(state, player_turn, action, remaining, deadline) {
 			SimpleResult::AlwaysWinnable => true,
 			SimpleResult::WinnableWithDraws(_) => true,
 			SimpleResult::Unwinnable => false
@@ -210,7 +268,7 @@ impl EndgameSolver {
 		winnable
 	}
 
-	pub(super) fn winnable_if(&mut self, state: &State, player_turn: usize, action: &PerformAction, remaining: &RemainingMap, depth: usize, deadline: &Instant) -> SimpleResult {
+	pub(super) fn winnable_if(&mut self, state: &State, player_turn: usize, action: &PerformAction, remaining: &RemainingMap, deadline: &Instant) -> SimpleResult {
 		let hash = format!("{},{},{:?},{:?}", state.hash(), player_turn, action, remaining.iter().sorted_by_key(|(id, _)| id.suit_index * 10 + id.rank));
 
 		if self.if_cache.contains_key(&hash) {
@@ -224,7 +282,7 @@ impl EndgameSolver {
 		// info!("{}", format!("checking if {} is winning {} {}", action.fmt_s(state, player_turn), state.turn_count, self.simpler_cache.len()).green());
 		if state.cards_left == 0 || action.is_clue() {
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, None);
-			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), remaining, depth + 1, deadline);
+			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), remaining, deadline);
 
 			let res = if winnable { SimpleResult::AlwaysWinnable } else { SimpleResult:: Unwinnable };
 			self.if_cache.insert(hash, res.clone());
@@ -238,7 +296,7 @@ impl EndgameSolver {
 			let new_state = EndgameSolver::advance_state(state, action, player_turn, Some(draw));
 			let new_remaining = remove_remaining(remaining, *id);
 
-			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), &new_remaining, depth + 1, deadline);
+			let winnable = self.winnable_simpler(&new_state, state.next_player_index(player_turn), &new_remaining, deadline);
 			if winnable {
 				winnable_draws.push(*id);
 			}

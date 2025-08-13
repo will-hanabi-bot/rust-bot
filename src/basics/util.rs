@@ -34,11 +34,11 @@ pub fn visible_find<F>(state: &State, player: &Player, id: Identity, options: Ma
 	orders
 }
 
-pub fn clue_to_perform(clue: &Clue, table_id: u32) -> PerformAction {
+pub fn clue_to_perform(clue: &Clue) -> PerformAction {
 	let Clue { kind, value, target } = clue;
 	match kind {
-		ClueKind::COLOUR => PerformAction::Colour { table_id: Some(table_id), value: *value, target: *target },
-		ClueKind::RANK => PerformAction::Rank { table_id: Some(table_id), value: *value, target: *target },
+		ClueKind::COLOUR => PerformAction::Colour { value: *value, target: *target },
+		ClueKind::RANK => PerformAction::Rank { value: *value, target: *target },
 	}
 }
 

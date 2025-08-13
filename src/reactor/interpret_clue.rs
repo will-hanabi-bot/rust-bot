@@ -12,7 +12,7 @@ use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::WaitingConnection;
 use crate::basics::state::State;
 use crate::basics::util::players_upto;
-use crate::basics::variant::{BROWNISH, PINKISH, RAINBOWISH};
+use crate::basics::variant::{touch_possibilities, BROWNISH, PINKISH, RAINBOWISH};
 use crate::fix::check_fix;
 use crate::reactor::{ClueInterp, Reactor};
 
@@ -170,48 +170,64 @@ impl Reactor {
 		}
 	}
 
-	fn alternative_clue(game: &Game, action: &ClueAction) -> Option<Clue>{
+	/**
+	 * Returns true if the giver could give a non-bad touching ref play clue or a ref dc clue on trash instead.
+	 */
+	fn alternative_clue(game: &Game, giver: usize) -> Option<Clue>{
 		let Game { common, state,  .. } = game;
-		let ClueAction { target, .. } = action;
 
 		if game.no_recurse {
 			return None;
 		}
 
-		state.all_valid_clues(*target).iter().find(|clue| {
-			let base_clue = clue.to_base();
-			let list = state.clue_touched(&state.hands[*target], &base_clue);
-
-			let hand = &state.hands[*target];
-			let newly_touched = list.iter().filter(|&&o| !state.deck[o].clued).copied().collect::<Vec<_>>();
-
-			if newly_touched.is_empty() {
-				return false;
+		for target in 0..state.num_players {
+			if target == giver || target == state.our_player_index {
+				continue;
 			}
 
-			match clue.kind {
-				ClueKind::COLOUR => {
-					let play_target = newly_touched.iter().map(|&o| common.refer(&game.frame(), hand, o, true)).max().unwrap();
-					state.is_playable(state.deck[play_target].id().unwrap())
+			for clue in state.all_valid_clues(target) {
+				let base_clue = clue.to_base();
+				let list = state.clue_touched(&state.hands[target], &base_clue);
+
+				let hand = &state.hands[target];
+				let newly_touched = list.iter().filter(|&&o| !state.deck[o].clued).copied().collect::<Vec<_>>();
+
+				if newly_touched.is_empty() {
+					continue;
 				}
-				ClueKind::RANK => {
-					if let Some(lock_order) = hand.iter().filter(|&&o| !state.deck[o].clued).min() && list.contains(lock_order) {
-						return false;
+
+				let valid_clue = match clue.kind {
+					ClueKind::COLOUR => {
+						let play_target = newly_touched.iter().map(|&o| common.refer(&game.frame(), hand, o, true)).max().unwrap();
+
+						state.is_playable(state.deck[play_target].id().unwrap()) &&
+						(newly_touched.iter().all(|&o| !state.is_basic_trash(state.deck[o].id().unwrap())) ||
+							newly_touched.iter().all(|&o| common.thoughts[o].possible.intersect(&IdentitySet::from_iter(touch_possibilities(&base_clue, &state.variant))).iter().all(|i| state.is_basic_trash(i))))
 					}
+					ClueKind::RANK => {
+						if let Some(lock_order) = hand.iter().filter(|&&o| !state.deck[o].clued).min() && list.contains(lock_order) {
+							continue;
+						}
 
-					let focus = newly_touched.iter().max().unwrap();
-					let focus_pos = hand.iter().position(|o| o == focus).unwrap();
-					let target_index = hand.iter().enumerate().position(|(i, &o)| i > focus_pos && !state.deck[o].clued).unwrap();
+						let focus = newly_touched.iter().max().unwrap();
+						let focus_pos = hand.iter().position(|o| o == focus).unwrap();
+						let target_index = hand.iter().enumerate().position(|(i, &o)| i > focus_pos && !state.deck[o].clued).unwrap();
 
-					state.is_basic_trash(state.deck[hand[target_index]].id().unwrap())
+						state.is_basic_trash(state.deck[hand[target_index]].id().unwrap())
+					}
+				};
+
+				if valid_clue {
+					return Some(clue);
 				}
 			}
-		}).copied()
+		}
+		None
 	}
 
 	pub(super) fn bad_stable(prev: &Game, game: &Game, action: &ClueAction, interp: &ClueInterp, stall: bool) -> bool {
 		let Game { common, state, meta, .. } = game;
-		let ClueAction { target, .. } = action;
+		let ClueAction { giver, target, .. } = action;
 
 		let bad_playable = state.hands[*target].iter().find(|&&o|
 			meta[o].status == CardStatus::CalledToPlay && prev.meta[o].status != CardStatus::CalledToPlay && !game.state.has_consistent_inferences(&common.thoughts[o]));
@@ -222,7 +238,10 @@ impl Reactor {
 		}
 
 		let bad_discard = state.hands[*target].iter().find(|&&o|
-			meta[o].status == CardStatus::CalledToDiscard && prev.meta[o].status != CardStatus::CalledToDiscard && state.is_critical(state.deck[o].id().unwrap()));
+			meta[o].status == CardStatus::CalledToDiscard && prev.meta[o].status != CardStatus::CalledToDiscard &&
+			(state.is_critical(state.deck[o].id().unwrap()) ||
+				(stall && !state.is_basic_trash(state.deck[o].id().unwrap()) && Reactor::alternative_clue(game, *giver).is_some()))
+		);
 
 		if let Some(bad) = bad_discard {
 			warn!("bad discard on {bad}!");
@@ -231,7 +250,7 @@ impl Reactor {
 
 		// Check for bad lock
 		if *interp == ClueInterp::Lock {
-			if let Some(alt_clue) = Reactor::alternative_clue(game, action) {
+			if let Some(alt_clue) = Reactor::alternative_clue(game, *giver) {
 				warn!("alternative clue {} was available!", alt_clue.fmt(state));
 				return true;
 			}
@@ -243,7 +262,7 @@ impl Reactor {
 
 		// Check for bad stall
 		if *interp == ClueInterp::Stall {
-			if let Some(alt_clue) = Reactor::alternative_clue(game, action) {
+			if let Some(alt_clue) = Reactor::alternative_clue(game, *giver) {
 				warn!("alternative clue {} was available!", alt_clue.fmt(state));
 				return true;
 			}
@@ -414,7 +433,7 @@ impl Reactor {
 								return Some(ClueInterp::Reactive);
 							}
 						}
-						panic!("Unreachable finesse");
+						None
 					}
 					Some((index, target)) => {
 						let target_slot = index + 1;

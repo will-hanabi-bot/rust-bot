@@ -6,8 +6,8 @@ use crate::reactor::ClueInterp;
 
 use super::clue::BaseClue;
 use ahash::AHasher;
-use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value;
+use serde::{Deserialize, Deserializer};
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -219,11 +219,11 @@ impl Action {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PerformAction {
-	Play { table_id: Option<u32>, target: usize },
-	Discard { table_id: Option<u32>, target: usize },
-	Colour { table_id: Option<u32>, target: usize, value: usize },
-	Rank { table_id: Option<u32>, target: usize, value: usize },
-	Terminate { table_id: Option<u32>, target: usize, value: usize }
+	Play { target: usize },
+	Discard { target: usize },
+	Colour { target: usize, value: usize },
+	Rank { target: usize, value: usize },
+	Terminate { target: usize, value: usize }
 }
 
 impl<'de> Deserialize<'de> for PerformAction {
@@ -234,16 +234,15 @@ impl<'de> Deserialize<'de> for PerformAction {
 		let s = Value::deserialize(deserializer)?;
 		match s {
 			Value::Object(ref map) => {
-				let table_id = map.get("tableID").map(|v| v.to_string().parse().unwrap_or(0));
 				let target = map.get("target").unwrap().to_string().parse().unwrap();
 
 				match map.get("type").unwrap() {
 					Value::Number(n) => match n.as_u64().unwrap() {
-						0 => Ok(PerformAction::Play { table_id, target }),
-						1 => Ok(PerformAction::Discard { table_id, target }),
-						2 => Ok(PerformAction::Colour { table_id, target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
-						3 => Ok(PerformAction::Rank { table_id, target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
-						4 => Ok(PerformAction::Terminate { table_id, target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
+						0 => Ok(PerformAction::Play { target }),
+						1 => Ok(PerformAction::Discard { target }),
+						2 => Ok(PerformAction::Colour { target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
+						3 => Ok(PerformAction::Rank { target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
+						4 => Ok(PerformAction::Terminate { target, value: map.get("value").unwrap().to_string().parse().unwrap() }),
 						_ => panic!("Invalid action type {s:?}")
 					},
 					_ => panic!("Invalid action type {s:?}")
@@ -307,52 +306,14 @@ impl PerformAction {
 
 		format!("{} ({})", action_type, state.player_names[player_index])
 	}
-}
 
-impl Serialize for PerformAction {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
+	pub fn json(&self, table_id: u32) -> Value {
 		match self {
-			PerformAction::Play { table_id, target } => {
-				let mut state = serializer.serialize_struct("PlayAction", 3)?;
-				state.serialize_field("type", &0)?;
-				state.serialize_field("tableID", table_id)?;
-				state.serialize_field("target", target)?;
-				state.end()
-			}
-			PerformAction::Discard { table_id, target } => {
-				let mut state = serializer.serialize_struct("DiscardAction", 3)?;
-				state.serialize_field("type", &1)?;
-				state.serialize_field("tableID", table_id)?;
-				state.serialize_field("target", target)?;
-				state.end()
-			}
-			PerformAction::Colour { table_id, target, value } => {
-				let mut state = serializer.serialize_struct("ColourAction", 4)?;
-				state.serialize_field("type", &2)?;
-				state.serialize_field("tableID", table_id)?;
-				state.serialize_field("target", target)?;
-				state.serialize_field("value", value)?;
-				state.end()
-			}
-			PerformAction::Rank { table_id, target, value } => {
-				let mut state = serializer.serialize_struct("RankAction", 4)?;
-				state.serialize_field("type", &3)?;
-				state.serialize_field("tableID", table_id)?;
-				state.serialize_field("target", target)?;
-				state.serialize_field("value", value)?;
-				state.end()
-			}
-			PerformAction::Terminate { table_id, target, value } => {
-				let mut state = serializer.serialize_struct("TerminateAction", 4)?;
-				state.serialize_field("type", &4)?;
-				state.serialize_field("tableID", table_id)?;
-				state.serialize_field("target", target)?;
-				state.serialize_field("value", value)?;
-				state.end()
-			}
+			PerformAction::Play { target } => 				json!({ "tableID": table_id, "type": 0, "target": target }),
+			PerformAction::Discard { target } => 			json!({ "tableID": table_id, "type": 1, "target": target }),
+			PerformAction::Colour { target, value } => 		json!({ "tableID": table_id, "type": 2, "target": target, "value": value }),
+			PerformAction::Rank { target, value } => 		json!({ "tableID": table_id, "type": 3, "target": target, "value": value }),
+			PerformAction::Terminate { target, value } => 	json!({ "tableID": table_id, "type": 4, "target": target, "value": value })
 		}
 	}
 }

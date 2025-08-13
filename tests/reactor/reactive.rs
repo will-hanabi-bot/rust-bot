@@ -43,7 +43,7 @@ fn it_reacts_to_a_reactive_play_play() {
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["r1", "y1", "g1", "p1"]);
 
 	let action = game.take_action();
-	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][0] });
+	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0] });
 }
 
 
@@ -171,7 +171,7 @@ fn it_reacts_to_a_reactive_finesse() {
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["r1"]);
 
 	let action = game.take_action();
-	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][0] });
+	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0] });
 }
 
 #[test]

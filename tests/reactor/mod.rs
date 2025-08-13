@@ -162,7 +162,7 @@ fn it_understands_a_known_delayed_stable_play() {
 	let action = game.take_action();
 
 	// We should play g2 into it.
-	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][1] });
+	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][1] });
 }
 
 #[test]
@@ -188,6 +188,6 @@ fn it_understands_an_unknown_delayed_stable_play() {
 	let action = game.take_action();
 
 	// We should play our 1 into it as g1.
-	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][0] });
+	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0] });
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["g1"]);
 }

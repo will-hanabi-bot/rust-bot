@@ -117,7 +117,7 @@ fn simulate_game(deck: &[Identity], variant: &Variant) -> GameSummary {
 	}
 
 	let target = games[0].state.last_player_index(games[0].state.current_player_index);
-	actions.push(PerformAction::Terminate { table_id: None, target, value: 0 });
+	actions.push(PerformAction::Terminate {  target, value: 0 });
 
 	let State { strikes, max_ranks, .. } = &games[0].state;
 
@@ -160,10 +160,12 @@ async fn main() {
 
 		let GameSummary { score, result, actions, notes } = simulate_game(&seeded_deck, &variant);
 
+		let actions_json = actions.iter().map(|a| a.json(0)).collect::<Vec<_>>();
+
 		let data = json!({
 			"players": ["Alice", "Bob", "Cathy"],
 			"deck": seeded_deck,
-			"actions": actions,
+			"actions": actions_json,
 			"notes": notes,
 			"options": { "variant": variant.name }
 		}).to_string();

@@ -50,8 +50,8 @@ pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<I
 		// Simulate playing the card
 		if let Some(play_id) = play_id {
 			let new_game = game.clone();
-			new_game.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32));
-			new_game.simulate_action(&Action::turn(state.turn_count, next_player_index as i32));
+			new_game.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32), None);
+			new_game.simulate_action(&Action::turn(state.turn_count, next_player_index as i32), None);
 
 			if connectable_simple(&new_game, next_player_index, target, id) {
 				return true;

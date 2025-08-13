@@ -371,7 +371,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.6.2 (rust-bot)");
+			send_pm(&self.ws, who, "v0.7.0 (rust-bot)");
 		}
 	}
 
@@ -386,7 +386,7 @@ impl BotClient {
 
 			game.queued_cmds.clear();
 
-			let Game { state, .. } = &game;
+			let Game { state, table_id, .. } = &game;
 			let perform = !game.catchup && state.current_player_index == state.our_player_index &&
 				!state.ended() &&
 				match action {
@@ -401,9 +401,11 @@ impl BotClient {
 
 				if game.in_progress {
 					let ws = self.ws.clone();
+					let arg = suggested_action.json(*table_id).to_string();
+
 					spawn(async move {
 						sleep(Duration::from_secs(2)).await;
-						send_cmd(&ws, "action", &json!(suggested_action).to_string());
+						send_cmd(&ws, "action", &arg);
 					});
 				}
 			}

@@ -70,7 +70,7 @@ fn it_gives_a_ref_discard() {
 	let perform = game.take_action();
 
 	// Alice should clue 4 to Bob.
-	assert_eq!(perform, PerformAction::Rank { table_id: Some(0), target: Player::Bob as usize, value: 4 });
+	assert_eq!(perform, PerformAction::Rank { target: Player::Bob as usize, value: 4 });
 }
 
 #[test]

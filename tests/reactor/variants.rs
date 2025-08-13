@@ -23,7 +23,7 @@ fn it_understands_a_playable_pink_promise() {
 
 	// Alice should play slot 2.
 	let action = game.take_action();
-	assert_eq!(action, PerformAction::Play { table_id: Some(0), target: game.state.hands[Player::Alice as usize][1] });
+	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][1] });
 	ex_asserts::has_inferences(&game, None, Player::Alice, 2, &["r2", "g2", "b2"]);
 
 	// Alice's slot 4 is not playable.
