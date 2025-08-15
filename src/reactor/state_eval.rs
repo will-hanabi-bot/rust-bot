@@ -8,7 +8,7 @@ use crate::basics::game::{Game, Interp};
 use crate::basics::clue_result::{bad_touch_result, elim_result, playables_result, BadTouchResult, ElimResult, PlayablesResult};
 
 impl Reactor {
-	fn get_result(game: &Game, hypo: &Game, action: &ClueAction) -> f32 {
+	pub fn get_result(game: &Game, hypo: &Game, action: &ClueAction) -> f32 {
 		let Game { state, common, meta, .. } = game;
 		let Game { state: hypo_state, common: hypo_common, .. } = hypo;
 		let hypo_frame = hypo.frame();
@@ -202,7 +202,7 @@ impl Reactor {
 
 		let value = match action {
 			Action::Clue(clue) => {
-				if let Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::None))) = hypo_game.last_move {
+				if matches!(hypo_game.last_move, Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake))) | Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Illegal)))) {
 					return -100.0;
 				}
 

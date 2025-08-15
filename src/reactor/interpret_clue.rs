@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::basics;
 use crate::basics::action::{Action, ClueAction};
-use crate::basics::card::{CardStatus, Identifiable, Identity};
+use crate::basics::card::{CardStatus, Identifiable, Identity, IdOptions};
 use crate::basics::clue::{Clue, ClueKind};
 use crate::basics::game::{frame::Frame, Game};
 use crate::basics::identity_set::IdentitySet;
@@ -37,7 +37,7 @@ impl Reactor {
 		let bob = game.state.next_player_index(*giver);
 
 		// Check for response inversion
-		if *target != bob && *target != game.state.our_player_index && (interp.is_none() || Reactor::bad_stable(prev, game, action, interp.as_ref().unwrap(), stall)) {
+		if *target != bob && *target != game.state.our_player_index && Reactor::bad_stable(prev, game, action, interp.as_ref().unwrap_or(&ClueInterp::Mistake), stall) {
 			// Overwrite game with prev
 			*game = prev.clone();
 			let Game { state, .. } = game;
@@ -229,6 +229,14 @@ impl Reactor {
 		let Game { common, state, meta, .. } = game;
 		let ClueAction { giver, target, .. } = action;
 
+		if *interp == ClueInterp::Illegal {
+			return false;
+		}
+
+		if *interp == ClueInterp::Mistake {
+			return true;
+		}
+
 		let bad_playable = state.hands[*target].iter().find(|&&o|
 			meta[o].status == CardStatus::CalledToPlay && prev.meta[o].status != CardStatus::CalledToPlay && !game.state.has_consistent_inferences(&common.thoughts[o]));
 
@@ -272,7 +280,7 @@ impl Reactor {
 	}
 
 	pub(super) fn interpret_reactive(prev: &Game, game: &mut Game, action: &ClueAction, reacter: usize, inverted: bool) -> Option<ClueInterp> {
-		let Game { common, state, meta, .. } = game;
+		let Game { common, state, .. } = game;
 		let ClueAction { giver, target: receiver, clue, .. } = action;
 
 		info!("interpreting reactive clue!");
@@ -295,174 +303,235 @@ impl Reactor {
 			return Some(ClueInterp::Reactive);
 		}
 
+		let possible_conns = Reactor::delayed_plays(game, *giver, *receiver);
+
+		let old_playables = prev.common.thinks_playables(&prev.frame(), *receiver);
+		let new_playables = game.common.thinks_playables(&game.frame(), *receiver);
+		let known_plays = old_playables.iter().filter(|o| new_playables.contains(o)).collect::<Vec<_>>();
+
+		let Game { common, state, meta, .. } = game;
+
 		match clue.kind {
 			ClueKind::COLOUR => {
-				let known_plays = prev.common.thinks_playables(&prev.frame(), *receiver);
-				let target = state.hands[*receiver].iter().enumerate()
-					.filter(|&(_, o)| !known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap()))
+				let play_targets = state.hands[*receiver].iter().enumerate()
+					.filter(|&(_, o)| meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.is_playable(state.deck[*o].id().unwrap()))
 					.sorted_by_key(|&(i, o)|
 						// Unclued dupe, with a clued dupe
 						if !prev.state.deck[*o].clued && state.hands[*receiver].iter().any(|o2| o2 < o && prev.state.deck[*o2].clued && state.deck[*o].is(&state.deck[*o2])) {
 							99
 						} else { i }
-					).next();
+					);
 
-				match target {
-					None => {
-						let prev_kt = prev.common.thinks_trash(&prev.frame(), *receiver);
+				// Try targeting all play targets
+				for (index, _) in play_targets {
+					let target_slot = index + 1;
+					let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
-						let mut targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-							!prev_kt.contains(o) &&
-							(state.is_basic_trash(state.deck[*o].id().unwrap()) ||
-								state.hands[*receiver].iter().any(|o2| o2 != o && state.deck[*o].is(&state.deck[*o2])))		// duped in the same hand
-						)
-						.sorted_by_key(|(_, o)| if prev.state.deck[**o].clued { 0 } else { 1 })
-						.collect::<Vec<_>>();
-
-						// Add sacrifice discard targets
-						if targets.is_empty() {
-							targets.extend(state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-								!prev_kt.contains(o) && !state.is_critical(state.deck[*o].id().unwrap())
-							).sorted_by_key(|(_, o)|
-								-common.playable_away(state.deck[**o].id().unwrap())
-							));
-						}
-
-						match targets.first() {
-							None => {
-								warn!("reactive clue but receiver had no playable or trash targets!");
-								None
-							}
-							Some((index, target)) => {
-								if state.next_player_index(*giver) != reacter && meta[**target].status == CardStatus::CalledToPlay {
-									warn!("can't target previously-playable trash with a reverse reactive clue!");
-									return None;
-								}
-
-								let target_slot = index + 1;
-								let react_slot = Reactor::calc_slot(focus_slot, target_slot);
-
-								if state.hands[reacter].get(react_slot - 1).is_none() {
-									warn!("Reacter doesn't have slot {react_slot}!");
-									return None;
-								}
-
-								let react_order = state.hands[reacter][react_slot - 1];
-								let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
-								if prev_plays.contains(&react_order) {
-									warn!("attempted play+dc would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
-									return None;
-								}
-
-								common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
-								Reactor::target_play(game, action, react_order, true, false)?;
-
-								info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-								Some(ClueInterp::Reactive)
-							}
-						}
+					if state.hands[reacter].get(react_slot - 1).is_none() {
+						warn!("Reacter doesn't have slot {react_slot}!");
+						continue;
 					}
-					Some((index, _)) => {
-						let target_slot = index + 1;
-						let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
-						if state.hands[reacter].get(react_slot - 1).is_none() {
-							warn!("Reacter doesn't have slot {react_slot}!");
-							return None;
-						}
+					let react_order = state.hands[reacter][react_slot - 1];
+					let prev_trash = prev.common.thinks_trash(&prev.frame(), reacter);
+					if prev_trash.contains(&react_order) || (inverted && prev_trash.is_empty() && react_slot == 1) {
+						warn!("attempted dc+play would result in reacter naturally discarding {} {react_order}!", state.log_iden(&state.deck[react_order]));
+						continue;
+					}
 
-						let react_order = state.hands[reacter][react_slot - 1];
-						let prev_trash = prev.common.thinks_trash(&prev.frame(), reacter);
-						if prev_trash.contains(&react_order) || (inverted && prev_trash.is_empty() && react_slot == 1) {
-							warn!("attempted dc+play would result in reacter naturally discarding {} {react_order}!", state.log_iden(&state.deck[react_order]));
-							return None;
-						}
+					if common.thoughts[react_order].possible.iter().all(|i| state.is_critical(i)) {
+						warn!("attempted dc+play would result in reacter discarding known critical {} {react_order}!", state.log_iden(&state.deck[react_order]));
+						continue;
+					}
 
-						common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
-						Reactor::target_discard(game, action, react_order, true);
+					common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
+					Reactor::target_discard(game, action, react_order, true);
 
-						info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-						Some(ClueInterp::Reactive)
+					info!("reactive dc+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
+					return Some(ClueInterp::Reactive);
+				}
+
+				// Didn't work, so target trash
+				let prev_kt = prev.common.thinks_trash(&prev.frame(), *receiver);
+
+				let mut targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+					!prev_kt.contains(o) &&
+					(state.is_basic_trash(state.deck[*o].id().unwrap()) ||
+						state.hands[*receiver].iter().any(|o2| o2 != o && state.deck[*o].is(&state.deck[*o2])))		// duped in the same hand
+				)
+				.sorted_by_key(|(_, o)|
+					if prev.state.deck[**o].clued {
+						0
+					} else if state.hands[*receiver].iter().any(|o2| o2 < o && prev.state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2])) {
+						-1		// Unclued dupe, with a clued dupe
+					} else {
+						1
+					}
+				)
+				.collect::<Vec<_>>();
+
+				// Add sacrifice discard targets
+				if targets.is_empty() {
+					targets.extend(state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+						!prev_kt.contains(o) && !state.is_critical(state.deck[*o].id().unwrap())
+					).sorted_by_key(|(_, o)|
+						-common.playable_away(state.deck[**o].id().unwrap())
+					));
+
+					if targets.is_empty() {
+						warn!("reactive clue but receiver had no playable, trash or sacrifice targets!");
+						return None;
 					}
 				}
+
+				for (index, target) in targets {
+					if state.next_player_index(*giver) != reacter && meta[*target].status == CardStatus::CalledToPlay {
+						warn!("can't target previously-playable trash with a reverse reactive clue!");
+						continue;
+					}
+
+					let target_slot = index + 1;
+					let react_slot = Reactor::calc_slot(focus_slot, target_slot);
+
+					if state.hands[reacter].get(react_slot - 1).is_none() {
+						warn!("reacter doesn't have slot {react_slot}!");
+						continue;
+					}
+
+					let react_order = state.hands[reacter][react_slot - 1];
+					let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
+					if prev_plays.contains(&react_order) {
+						warn!("attempted play+dc would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
+						continue;
+					}
+
+					if !common.thoughts[react_order].possible.iter().any(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i)) {
+						warn!("reaction would involve playing unplayable {} {react_order}!", state.log_iden(&state.deck[react_order]));
+						continue;
+					}
+
+					game.common.thoughts[react_order].old_inferred = Some(game.common.thoughts[react_order].inferred);
+					Reactor::target_play(game, action, react_order, true, false)?;
+					info!("reactive play+dc, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
+					return Some(ClueInterp::Reactive);
+				}
+				None
 			}
 			ClueKind::RANK => {
-				let known_plays = prev.common.thinks_playables(&prev.frame(), *receiver);
-
-				let play_target = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-					!known_plays.contains(o) && state.is_playable(state.deck[*o].id().unwrap())
+				let play_targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+					meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.is_playable(state.deck[*o].id().unwrap())
 				).sorted_by_key(|(i, o)| {
 					// Do not target an unclued copy when there is a clued copy
 					let unclued_dupe = !prev.state.deck[**o].clued && state.hands[*receiver].iter().any(|o2| &o2 != o && prev.state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2]));
 					if unclued_dupe { 99 } else { *i }
-				}).next();
+				});
 
-				match play_target {
-					None => {
-						let finesse_targets = state.hands[*receiver].iter().enumerate().filter(|(_, o)|
-							state.playable_away(state.deck[**o].id().unwrap()) == 1
-						).collect::<Vec<_>>();
+				for (index, target) in play_targets {
+					let target_slot = index + 1;
+					let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
-						if finesse_targets.is_empty() {
-							warn!("reactive clue but receiver had no playable targets!");
-							return None;
-						}
-
-						for react_slot in [1, 5, 4, 3, 2] {
-							let target_slot = Reactor::calc_slot(focus_slot, react_slot);
-
-							if state.hands[reacter].get(react_slot - 1).is_none() {
-								continue;
-							}
-
-							if let Some((_,finesse_target)) = finesse_targets.iter().find(|(i, _)| i + 1 == target_slot) {
-								let react_order = state.hands[reacter][react_slot - 1];
-								let receive_order = **finesse_target;
-
-								let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
-								if prev_plays.contains(&react_order) {
-									warn!("attempted finesse would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
-									return None;
-								}
-
-								common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
-								Reactor::target_play(game, action, react_order, true, false)?;
-								game.common.thoughts[react_order].inferred = IdentitySet::single(game.state.deck[receive_order].id().unwrap().prev());
-
-								info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-								return Some(ClueInterp::Reactive);
-							}
-						}
-						None
+					if state.hands[reacter].get(react_slot - 1).is_none() {
+						warn!("reacter doesn't have slot {react_slot}!");
+						continue;
 					}
-					Some((index, target)) => {
-						let target_slot = index + 1;
-						let react_slot = Reactor::calc_slot(focus_slot, target_slot);
 
-						if state.hands[reacter].get(react_slot - 1).is_none() {
-							warn!("Reacter doesn't have slot {react_slot}!");
-							return None;
-						}
+					let react_order = state.hands[reacter][react_slot - 1];
+					let receive_order = *target;
 
+					let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
+					if prev_plays.contains(&react_order) {
+						warn!("attempted play+play would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
+						continue;
+					}
+
+					if !common.thoughts[react_order].possible.iter().any(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i)) {
+						warn!("reaction would involve playing unplayable {} {react_order}!", state.log_iden(&state.deck[react_order]));
+						continue;
+					}
+
+					Reactor::target_play(game, action, react_order, true, false)?;
+					game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
+
+					info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
+					return Some(ClueInterp::Reactive);
+				}
+
+				let finesse_targets = state.hands[*receiver].iter().enumerate().filter(|(_, o)|
+					state.playable_away(state.deck[**o].id().unwrap()) == 1
+				).collect::<Vec<_>>();
+
+				if finesse_targets.is_empty() {
+					warn!("reactive clue but receiver had no playable targets!");
+					return None;
+				}
+
+				for react_slot in [1, 5, 4, 3, 2] {
+					let target_slot = Reactor::calc_slot(focus_slot, react_slot);
+
+					if state.hands[reacter].get(react_slot - 1).is_none() {
+						continue;
+					}
+
+					if let Some((_,finesse_target)) = finesse_targets.iter().find(|(i, _)| i + 1 == target_slot) {
 						let react_order = state.hands[reacter][react_slot - 1];
-						let receive_order = *target;
+						let receive_order = **finesse_target;
 
 						let prev_plays = prev.common.thinks_playables(&prev.frame(), reacter);
 						if prev_plays.contains(&react_order) {
-							warn!("attempted play+play would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
+							warn!("attempted finesse would result in reacter naturally playing {} {react_order}!", state.log_iden(&state.deck[react_order]));
 							return None;
+						}
+
+						if !common.thoughts[react_order].possible.iter().any(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i)) {
+							warn!("reaction would involve playing unplayable {} {react_order}!", state.log_iden(&state.deck[react_order]));
+							continue;
 						}
 
 						common.thoughts[react_order].old_inferred = Some(common.thoughts[react_order].inferred);
 						Reactor::target_play(game, action, react_order, true, false)?;
-						game.common.thoughts[react_order].inferred.retain(|i| i != game.state.deck[receive_order].id().unwrap());
+						game.common.thoughts[react_order].inferred = IdentitySet::single(game.state.deck[receive_order].id().unwrap().prev());
 
-						info!("reactive play+play, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
-						Some(ClueInterp::Reactive)
+						info!("reactive finesse, reacter {} (slot {}) receiver {} (slot {}), focus slot {}", game.state.player_names[reacter], react_slot, game.state.player_names[*receiver], target_slot, focus_slot);
+						return Some(ClueInterp::Reactive);
 					}
+				}
+				None
+			}
+		}
+	}
+
+	fn delayed_plays(game: &Game, giver: usize, receiver: usize) -> Vec<(usize, Identity)> {
+		let Game { common, state, meta, .. } = game;
+
+		let mut possible_conns = Vec::new();
+
+		for player_index in players_upto(state.num_players, state.next_player_index(giver), receiver) {
+			let mut playables = common.thinks_playables(&game.frame(), player_index);
+
+			// If they have an urgent discard, they can't play a connecting card. If they have an urgent playable, they can only play that card.
+			if let Some(urgent) = state.hands[player_index].iter().find(|&&o| meta[o].urgent) {
+				if meta[*urgent].trash {
+					continue;
+				} else {
+					playables = vec![*urgent];
+				}
+			}
+
+			for &o in &playables {
+				// Only consider playing the leftmost of similarly-possible cards
+				if playables.iter().any(|&p| p < o && common.thoughts[p].possible == common.thoughts[o].possible) {
+					continue;
+				}
+
+				if let Some(id) = common.thoughts[o].identity(&IdOptions { infer: true, ..Default::default() }) {
+					possible_conns.push((o, Identity { suit_index: id.suit_index, rank: id.rank + 1 }));
+				}
+				else {
+					possible_conns.extend(common.thoughts[o].inferred.iter().map(|i| (o, Identity { suit_index: i.suit_index, rank: i.rank + 1 })));
 				}
 			}
 		}
+		possible_conns
 	}
 
 	fn ref_play(prev: &Game, game: &mut Game, action: &ClueAction) -> Option<ClueInterp> {
@@ -487,62 +556,32 @@ impl Reactor {
 	}
 
 	fn target_play(game: &mut Game, action: &ClueAction, target: usize, urgent: bool, stable: bool) -> Option<ClueInterp> {
-		let ClueAction { giver, target: clue_target, .. } = action;
+		let ClueAction { giver, .. } = action;
+		let holder = game.state.holder_of(target).unwrap();
+		let possible_conns = Reactor::delayed_plays(game, *giver, holder);
 
-		// Include possible delayed plays
-		let possible_conns = players_upto(game.state.num_players, game.state.next_player_index(*giver), game.state.holder_of(target).unwrap()).iter().flat_map(|&i| {
-			let mut playables = game.common.thinks_playables(&game.frame(), i);
 
-			// If they have an urgent discard, they can't play a connecting card
-			if game.state.hands[i].iter().any(|&o| game.meta[o].urgent && game.meta[o].trash) {
-				return Vec::new();
+		let Game { common, state, .. } = game;
+		let new_inferred = common.thoughts[target].inferred.filter(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i));
+
+		if let Some(id) = game.state.deck[target].id() && let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(&id)) {
+			game.common.thoughts[*conn_order].old_inferred = Some(game.common.thoughts[*conn_order].inferred);
+			game.common.thoughts[*conn_order].inferred = IdentitySet::single(id.prev());
+
+			let meta = &mut game.meta[*conn_order];
+			meta.urgent = true;
+			meta.status = CardStatus::CalledToPlay;
+			if meta.reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
+				meta.reasoning.push(game.state.turn_count);
 			}
 
-			// If this player has an urgent playable, they can only play that card
-			if playables.iter().any(|&o| game.meta[o].urgent) {
-				playables.retain(|&o| game.meta[o].urgent);
-			}
-
-			// Only consider playing the leftmost of similarly-possible cards
-			let playables_clone = playables.clone();
-			playables.retain(|&o| {
-				!playables_clone.iter().any(|&p| p > o && game.common.thoughts[p].possible == game.common.thoughts[o].possible)
-			});
-
-			playables.iter().flat_map(|&o|
-				if let Some(id) = game.state.deck[o].id() {
-					vec![(o, Identity { suit_index: id.suit_index, rank: id.rank + 1 })]
-				}
-				else {
-					game.common.thoughts[o].inferred.iter().map(|i| (o, Identity { suit_index: i.suit_index, rank: i.rank + 1 })).collect::<Vec<_>>()
-				}
-			).collect::<Vec<_>>()
-		}).collect::<Vec<_>>();
-
-		// If we know which card is connecting, update the connecting card to be urgent
-		if let Some(id) = game.state.deck[target].id() {
-			if let Some((conn_order, _)) = possible_conns.iter().find(|c| c.1.is(&id)) {
-				let conn_id = Identity { suit_index: id.suit_index, rank: id.rank - 1 };
-				game.common.thoughts[*conn_order].old_inferred = Some(game.common.thoughts[*conn_order].inferred);
-				game.common.thoughts[*conn_order].inferred.retain(|i| i == conn_id);
-
-				let meta = &mut game.meta[*conn_order];
-				meta.urgent = true;
-				meta.status = CardStatus::CalledToPlay;
-				if meta.reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
-					meta.reasoning.push(game.state.turn_count);
-				}
-
-				info!("updating connecting {} as {} to be urgent", conn_order, game.state.log_id(conn_id));
-			}
+			info!("updating connecting {} as {} to be urgent", *conn_order, game.state.log_id(id.prev()));
 		}
 
-		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
-		inferred.retain(|i| game.state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i));
-
-		let reset = inferred.is_empty();
-		game.common.thoughts[target].inferred = inferred;
-		game.common.thoughts[target].info_lock = Some(inferred);
+		let reset = new_inferred.is_empty();
+		game.common.thoughts[target].old_inferred = Some(game.common.thoughts[target].inferred);
+		game.common.thoughts[target].inferred = new_inferred;
+		game.common.thoughts[target].info_lock = Some(new_inferred);
 		if game.meta[target].reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
 			game.meta[target].reasoning.push(game.state.turn_count);
 		}
@@ -552,7 +591,17 @@ impl Reactor {
 			warn!("target {target} was reset!");
 
 			// If the target is fully known trash, this is an acceptable stall.
-			return (stable && game.common.order_kt(&game.frame(), target)).then_some(ClueInterp::Stall);
+			let interp = if stable {
+				if game.common.order_kt(&game.frame(), target) {
+					Some(ClueInterp::Stall)
+				}
+				else if *giver == game.state.our_player_index {
+					Some(ClueInterp::Illegal)
+				} else {
+					None
+				}
+			} else { None };
+			return interp;
 		}
 
 		let Game { common, state, .. } = game;
@@ -564,7 +613,7 @@ impl Reactor {
 			meta.urgent = true;
 		}
 
-		info!("targeting play {} ({}), infs {}{}", target, state.player_names[*clue_target], common.str_infs(state, target), if urgent { ", urgent" } else { "" });
+		info!("targeting play {} ({}), infs {}{}", target, state.player_names[holder], common.str_infs(state, target), if urgent { ", urgent" } else { "" });
 		Some(ClueInterp::RefPlay)
 	}
 

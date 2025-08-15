@@ -19,7 +19,7 @@ pub struct Reactor;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 pub enum ClueInterp {
-	None, Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Fix, Reclue, Stall
+	Illegal, Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Fix, Reclue, Stall
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -117,7 +117,7 @@ impl Convention for Reactor {
 			}
 		};
 
-		game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(interp.unwrap_or(ClueInterp::None))));
+		game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(interp.unwrap_or(ClueInterp::Mistake))));
 
 		let frame = Frame::new(&game.state, &game.meta);
 		game.common.good_touch_elim(&frame);
@@ -269,12 +269,12 @@ impl Convention for Reactor {
 		let mut all_actions = all_clues.into_iter().chain(all_plays).chain(all_discards).collect::<Vec<_>>();
 
 		if !cant_discard && (state.clue_tokens == 0 || num_plays == 0) && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
-			let chop = state.our_hand()[0];
-
-			all_actions.push((
-				PerformAction::Discard { target: chop },
-				Action::discard(state.our_player_index, chop, -1, -1, false)
-			));
+			if let Some(chop) = state.our_hand().iter().find(|&&o| !state.deck[o].clued) {
+				all_actions.push((
+					PerformAction::Discard { target: *chop },
+					Action::discard(state.our_player_index, *chop, -1, -1, false)
+				));
+			}
 		}
 
 		if all_actions.is_empty() {

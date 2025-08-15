@@ -193,7 +193,6 @@ impl Player {
 
 	pub fn thinks_playables(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
 		let Frame { state, meta } = frame;
-		let linked_orders = self.linked_orders(state);
 
 		state.hands[player_index].iter().filter_map(|&order| {
 			if meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
@@ -201,14 +200,15 @@ impl Player {
 			}
 
 			let thought = &self.thoughts[order];
-			let unsafe_linked = linked_orders.contains(&order) && (
-				state.strikes == 2 ||
-				state.endgame_turns.is_some()
-			);
 
-			if unsafe_linked {
-				// warn!("{} is unsafe linked {:?}", order, self.links);
-				return None;
+			for link in &self.links {
+				match link {
+					Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => {
+						if state.strikes == 2 || (orders.contains(&order) && *orders.iter().max().unwrap() != order) {
+							return None;
+						}
+					}
+				}
 			}
 
 			let poss = if self.player_index != state.our_player_index || state.strikes != 2 || meta[order].focused { thought.possibilities() } else { thought.possible };
@@ -311,6 +311,11 @@ impl Player {
 		let mut good_touch_elim = IdentitySet::EMPTY;
 		let linked_orders = self.linked_orders(state);
 
+		fn delayed_playable(good_touch_elim: IdentitySet, hypo_stacks: &[usize], ids: impl Iterator<Item = Identity>) -> bool {
+			let mut remaining = ids.filter(|id| !good_touch_elim.contains(*id)).peekable();
+			remaining.peek().is_some() && remaining.all(|id| hypo_stacks[id.suit_index] + 1 == id.rank)
+		}
+
 		while found_playable {
 			found_playable = false;
 
@@ -328,15 +333,10 @@ impl Player {
 						continue;
 					}
 
-					let delayed_playable = |ids: Vec<Identity>| {
-						let mut remaining = ids.iter().filter(|id| !good_touch_elim.contains(**id)).peekable();
-						remaining.peek().is_some() && remaining.all(|id| hypo_stacks[id.suit_index] + 1 == id.rank)
-					};
-
-					let playable = state.has_consistent_inferences(thought) &&
-						(delayed_playable(thought.possible.iter().collect()) ||
-						delayed_playable(thought.inferred.iter().collect()) ||
-						(frame.is_blind_playing(order) && actual_id.is_some() && delayed_playable(vec![actual_id.unwrap()])));
+					let playable = state.has_consistent_inferences(thought) && (
+						delayed_playable(good_touch_elim, &hypo_stacks, thought.possible.iter()) ||
+						delayed_playable(good_touch_elim, &hypo_stacks, thought.inferred.iter()) ||
+						(frame.is_blind_playing(order) && actual_id.is_some_and(|i| delayed_playable(good_touch_elim, &hypo_stacks, std::iter::once(i)))));
 
 					if !playable {
 						continue;

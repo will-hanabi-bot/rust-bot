@@ -175,7 +175,7 @@ fn it_reacts_to_a_reactive_finesse() {
 }
 
 #[test]
-fn it_doesnt_target_an_unclued_dupe() {
+fn it_doesnt_play_target_an_unclued_dupe() {
 	let mut game = util::setup(Arc::new(Reactor), &[
 		&["xx", "xx", "xx", "xx", "xx"],
 		&["r3", "g2", "r2", "r3", "g5"],
@@ -197,6 +197,52 @@ fn it_doesnt_target_an_unclued_dupe() {
 }
 
 #[test]
+fn it_doesnt_play_target_a_discarding_dupe() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["r3", "g2", "y3", "r3", "g5"],
+		&["g1", "b5", "p2", "b1", "g4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		play_stacks: Some(&[1, 0, 0, 0, 0]),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues red to Bob");
+	take_turn(&mut game, "Alice plays r2 (slot 3)");	// Targeting discard on r3
+
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToDiscard);
+
+	take_turn(&mut game, "Bob clues 1 to Cathy");
+	take_turn(&mut game, "Cathy clues yellow to Bob");
+
+	// We should discard slot 4 (so that Bob plays the non-discarding dupe in slot 4).
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][3]].status, CardStatus::CalledToDiscard);
+}
+
+#[test]
+fn it_doesnt_dc_target_an_unclued_dupe() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["r3", "y1", "r2", "r3", "g5"],
+		&["g1", "b5", "p2", "b1", "g4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		play_stacks: Some(&[0, 1, 0, 0, 0]),
+		init: Box::new(|game| {
+			// Bob's r3 in slot 4 is clued.
+			pre_clue(game, Player::Bob, 4, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Alice }]);
+		}),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues green to Bob");
+
+	// We should play slot 4 (so that Bob discards slot 1).
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][3]].status, CardStatus::CalledToPlay);
+}
+
+#[test]
 fn it_reacts_to_a_sacrifice() {
 	let mut game = util::setup(Arc::new(Reactor), &[
 		&["xx", "xx", "xx", "xx", "xx"],
@@ -212,4 +258,37 @@ fn it_reacts_to_a_sacrifice() {
 
 	// We should play slot 2 (Bob discards y3 in slot 3).
 	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][1]].status, CardStatus::CalledToPlay);
+}
+
+#[test]
+fn it_shifts_a_reaction() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "g2", "r2", "r3", "g5"],
+		&["g1", "b5", "p2", "b1", "g4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		init: Box::new(|game| {
+			// Alice has a clued 5 in slot 3.
+			pre_clue(game, Player::Alice, 3, &[TestClue { kind: ClueKind::RANK, value: 5, giver: Player::Cathy }]);
+		}),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues 3 to Bob");
+
+	// Normally, Alice would play slot 3 -> Bob slot 1 = 4. However, slot 3 is a known 5.
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][2]].status, CardStatus::None);
+
+	// Instead, Alice should play slot 1 -> Bob slot 3 as a finesse.
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][0]].status, CardStatus::CalledToPlay);
+	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["r1"]);
+
+	let action = game.take_action();
+	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0] });
+
+	take_turn(&mut game, "Alice plays r1 (slot 1)");
+
+	// Bob's slot 1 should still be allowed to be b1.
+	assert!(game.common.thoughts[game.state.hands[Player::Bob as usize][0]].inferred.contains(game.state.expand_short("b1")));
 }

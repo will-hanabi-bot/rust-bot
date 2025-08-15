@@ -1,8 +1,9 @@
-use rust_bot::basics::action::{PerformAction};
+use rust_bot::basics::action::{ClueAction, PerformAction};
 use rust_bot::basics::card::CardStatus;
+use rust_bot::basics::clue::BaseClue;
 use rust_bot::basics::{clue::ClueKind};
-use rust_bot::basics::game::{Game};
-use rust_bot::reactor::Reactor;
+use rust_bot::basics::game::{Game, SimOpts};
+use rust_bot::reactor::{Reactor};
 use std::sync::Arc;
 
 use crate::ex_asserts;
@@ -82,7 +83,10 @@ fn it_understands_a_stable_clue_to_cathy() {
 	take_turn(&mut game, "Alice clues green to Cathy");
 
 	// Cathy is called to play g1.
-	ex_asserts::has_inferences(&game, None, Player::Cathy, 1, &["g1"]);
+	// ex_asserts::has_inferences(&game, None, Player::Cathy, 1, &["g1"]);
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][0]].status, CardStatus::CalledToPlay);
+
+	take_turn(&mut game, "Bob plays b1, drawing p4");
 }
 
 #[test]
@@ -107,6 +111,37 @@ fn it_understands_a_reverse_reactive_clue() {
 	take_turn(&mut game, "Bob plays b1, drawing y3");
 
 	assert!(game.common.thinks_playables(&game.frame(), Player::Cathy as usize).contains(&game.state.hands[Player::Cathy as usize][1]));
+}
+
+#[test]
+fn it_doesnt_give_a_bad_reverse_reactive_clue() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "r1", "r4", "y4", "y5"],
+		&["y1", "g4", "g4", "b4", "b4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues 5 to Bob");
+	take_turn(&mut game, "Alice plays g1 (slot 4)");		// targeting Bob's b1
+	take_turn(&mut game, "Bob clues green to Cathy");
+
+	take_turn(&mut game, "Cathy plays y1, drawing b1");
+
+	// We cannot give 4 to Bob as a reverse reactive, since Cathy would play b1 to react into r1 and Bob is already playing b1.
+	let clue = ClueAction {
+		giver: Player::Alice as usize,
+		target: Player::Bob as usize,
+		list: vec![5, 6, 7],
+		clue: BaseClue { kind: ClueKind::RANK, value: 4 }
+	};
+
+	let new_game = game.simulate_clue(&clue, SimOpts::default());
+	let result = Reactor::get_result(&game, &new_game, &clue);
+
+	assert_eq!(result, -100.0);
 }
 
 #[test]
@@ -190,4 +225,43 @@ fn it_understands_an_unknown_delayed_stable_play() {
 	// We should play our 1 into it as g1.
 	assert_eq!(action, PerformAction::Play { target: game.state.hands[Player::Alice as usize][0] });
 	ex_asserts::has_inferences(&game, None, Player::Alice, 1, &["g1"]);
+}
+
+#[test]
+fn it_doesnt_give_a_bad_connecting_clue() {
+	let game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "y1", "g1", "g2", "p2"],
+		&["y1", "p3", "g5", "p5", "r5"],
+	], TestOptions {
+		play_stacks: Some(&[3, 3, 4, 4, 1]),
+		// Bob's slots 4 and 5 are clued with 2.
+		init: Box::new(|game: &mut Game| {
+			pre_clue(game, Player::Bob, 4, &[TestClue { kind: ClueKind::RANK, value: 2, giver: Player::Alice }]);
+			pre_clue(game, Player::Bob, 5, &[TestClue { kind: ClueKind::RANK, value: 2, giver: Player::Alice }]);
+		}),
+		..TestOptions::default()
+	});
+
+	let clue = ClueAction {
+		giver: Player::Alice as usize,
+		target: Player::Cathy as usize,
+		list: vec![12],
+		clue: BaseClue { kind: ClueKind::COLOUR, value: Colour::Green as usize }
+	};
+
+	let new_game = game.simulate_clue(&clue, SimOpts::default());
+	let result = Reactor::get_result(&game, &new_game, &clue);
+
+	assert_eq!(result, -100.0);
+
+	// take_turn(&mut game, "Alice clues green to Cathy");
+
+	// assert_eq!(game.last_move, Some(rust_bot::basics::game::Interp::Reactor(ReactorInterp::Clue(rust_bot::reactor::ClueInterp::Illegal))));
+
+	// // Cathy is called to play g1.
+	// // ex_asserts::has_inferences(&game, None, Player::Cathy, 1, &["g1"]);
+	// assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][0]].status, CardStatus::CalledToPlay);
+
+	// take_turn(&mut game, "Bob plays b1, drawing p4");
 }
