@@ -28,33 +28,34 @@ pub fn check_fix(prev: &Game, game: &Game, action: &ClueAction) -> (Vec<usize>, 
 	(clued_resets, duplicate_reveals)
 }
 
-pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<Identity>) -> bool {
+pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<Identity>) -> Vec<usize> {
 	let Game { state, players, .. } = game;
 
 	if let Some(id) = id {
 		if state.is_playable(id) {
-			return true;
+			return vec![99];
 		}
 	}
 
 	if start == target {
-		return !players[target].thinks_playables(&game.frame(), target).is_empty();
+		return players[target].obvious_playables(&game.frame(), target);
 	}
 
 	let next_player_index = state.next_player_index(start);
-	let playables = players[start].thinks_playables(&game.frame(), start);
+	let playables = players[start].obvious_playables(&game.frame(), start);
 
 	for order in playables {
 		let play_id = players[start].thoughts[order].identity(&IdOptions { infer: true, ..Default::default() });
 
 		// Simulate playing the card
 		if let Some(play_id) = play_id {
-			let new_game = game.clone();
-			new_game.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32), None);
-			new_game.simulate_action(&Action::turn(state.turn_count, next_player_index as i32), None);
+			let mut new_game = game.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32), None);
+			new_game = new_game.simulate_action(&Action::turn(state.turn_count, next_player_index as i32), None);
 
-			if connectable_simple(&new_game, next_player_index, target, id) {
-				return true;
+			let play_connectables = connectable_simple(&new_game, next_player_index, target, id);
+
+			if !play_connectables.is_empty() {
+				return play_connectables;
 			}
 		}
 	}

@@ -27,7 +27,7 @@ fn it_understands_a_playable_pink_promise() {
 	ex_asserts::has_inferences(&game, None, Player::Alice, 2, &["r2", "g2", "b2"]);
 
 	// Alice's slot 4 is not playable.
-	let playables = game.common.thinks_playables(&game.frame(), Player::Alice as usize);
+	let playables = game.common.obvious_playables(&game.frame(), Player::Alice as usize);
 	assert!(playables.len() == 1 && playables[0] == game.state.hands[Player::Alice as usize][1]);
 }
 
@@ -47,7 +47,7 @@ fn it_understands_a_brown_tcm() {
 	take_turn(&mut game, "Cathy clues 1 to Alice (slots 2,4)");
 
 	// Alice does not have a playable.
-	let playables = game.common.thinks_playables(&game.frame(), Player::Alice as usize);
+	let playables = game.common.obvious_playables(&game.frame(), Player::Alice as usize);
 	assert!(playables.is_empty());
 	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][0]].status, CardStatus::None);
 }

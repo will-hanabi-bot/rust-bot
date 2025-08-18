@@ -1,10 +1,12 @@
 use rust_bot::basics::action::{PerformAction};
 use rust_bot::basics::card::CardStatus;
+use rust_bot::basics::clue::ClueKind;
+use rust_bot::basics::game::Game;
 use rust_bot::reactor::Reactor;
 use std::sync::Arc;
 
 use crate::ex_asserts;
-use crate::util::{self, take_turn, Player, TestOptions};
+use crate::util::{self, pre_clue, take_turn, Colour, Player, TestClue, TestOptions};
 
 #[test]
 fn it_understands_a_ref_play() {
@@ -84,4 +86,27 @@ fn it_understands_a_lock() {
 	take_turn(&mut game, "Alice clues 4 to Bob");
 
 	assert!(game.common.thinks_locked(&game.frame(), Player::Bob as usize));
+}
+
+#[test]
+fn it_doesnt_focus_the_wrong_card_for_the_last_id() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["r1", "y1", "g1", "b1", "p1"],
+		&["r1", "y1", "g1", "b1", "p1"],
+	], TestOptions {
+		play_stacks: Some(&[5, 5, 5, 5, 2]),
+		starting: Player::Cathy,
+		// Alice's slot 5 is clued with purple.
+		init: Box::new(|game: &mut Game| {
+			pre_clue(game, Player::Alice, 5, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Purple as usize, giver: Player::Cathy }]);
+		}),
+		..TestOptions::default()
+	});
+
+	// Although Alice could play slot 2, she should play slot 5 first.
+	take_turn(&mut game, "Cathy clues 3 to Alice (slots 2,5)");
+
+	let action = game.take_action();
+	assert_eq!(action, PerformAction::Play { target: 0 });
 }

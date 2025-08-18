@@ -31,6 +31,11 @@ impl Reactor {
 			return -100.0;
 		}
 
+		if !bad_touch.is_empty() && new_touched.iter().all(|o| bad_touch.contains(o)) && playables.is_empty() {
+			warn!("clue {} only bad touches and gets no playables!", clue.fmt(state, *target));
+			return -100.0;
+		}
+
 		if let Some(Interp::Reactor(ReactorInterp::Clue(last_move))) = &hypo.last_move {
 			if (last_move == &ClueInterp::RefPlay || last_move == &ClueInterp::Reclue) && playables.is_empty() {
 				warn!("clue {} looks like {:?} but gets no playables!", clue.fmt(state, *target), last_move);
@@ -116,7 +121,7 @@ impl Reactor {
 		let trash = game.players[player_index].thinks_trash(&frame, player_index);
 		let urgent_dc = trash.iter().find(|o| meta[**o].urgent);
 
-		let all_playables = game.players[player_index].thinks_playables(&frame, player_index);
+		let all_playables = game.players[player_index].obvious_playables(&frame, player_index);
 		if urgent_dc.is_none() && !all_playables.is_empty() {
 			let urgent_play = all_playables.iter().find(|o| meta[**o].urgent);
 
@@ -156,6 +161,10 @@ impl Reactor {
 
 		if game.players[player_index].thinks_locked(&frame, player_index) || (offset == 1 && state.clue_tokens == 8) {
 			if state.clue_tokens == 0 {
+				if game.common.waiting.as_ref().is_some_and(|w| w.reacter == player_index) {
+					warn!("trusting reactive clue for discard at 0 clues from locked hand!");
+					return 0.0;
+				}
 				warn!("forcing discard at 0 clues from locked hand!");
 				return -15.0;
 			}
@@ -206,7 +215,7 @@ impl Reactor {
 					return -100.0;
 				}
 
-				let mult = if !game.me().thinks_playables(&game.frame(), state.our_player_index).is_empty() {
+				let mult = if !game.me().obvious_playables(&game.frame(), state.our_player_index).is_empty() {
 					if state.in_endgame() { 0.1 } else { 0.25 }
 				} else {
 					0.5
@@ -220,7 +229,7 @@ impl Reactor {
 
 				let mult = if state.in_endgame() {
 					0.2 * (1_i32 - useful_count as i32) as f32 - (state.num_players as i32 - state.pace()) as f32 * 0.1
-				} else if !game.me().thinks_playables(&game.frame(), state.our_player_index).is_empty() {
+				} else if !game.me().obvious_playables(&game.frame(), state.our_player_index).is_empty() {
 					if state.in_endgame() { 0.1 } else { 0.25 }
 				} else {
 					1.0

@@ -317,6 +317,13 @@ impl Game {
 		new_game.catchup = self.catchup;
 
 		new_game.notes = self.notes.clone();
+
+		for card in &mut new_game.state.deck {
+			if card.base.is_none() && let Some(id) = self.deck_ids[card.order] {
+				card.base = Some(id);
+			}
+		}
+
 		Ok(new_game)
 	}
 

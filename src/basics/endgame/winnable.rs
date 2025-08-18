@@ -125,7 +125,7 @@ impl EndgameSolver {
 
 				for i in 0..endgame_turns {
 					let player_index = (player_turn + i) % state.num_players;
-					let playables = game.players[player_index].thinks_playables(&game.frame(), player_index);
+					let playables = game.players[player_index].obvious_playables(&game.frame(), player_index);
 
 					if playables.is_empty() {
 						continue;

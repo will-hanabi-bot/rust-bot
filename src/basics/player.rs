@@ -191,6 +191,22 @@ impl Player {
 		)
 	}
 
+	pub fn obvious_playables(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
+		let Frame { state, meta } = frame;
+
+		state.hands[player_index].iter().filter_map(|&order| {
+			if meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
+				return Some(order);
+			}
+
+			if self.thoughts[order].possible.iter().all(|id| state.is_playable(id)) {
+				return Some(order);
+			}
+
+			self.thoughts[order].info_lock.is_some_and(|ids| ids.iter().all(|id| state.is_playable(id))).then_some(order)
+		}).collect()
+	}
+
 	pub fn thinks_playables(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
 		let Frame { state, meta } = frame;
 
@@ -220,8 +236,12 @@ impl Player {
 		frame.state.hands[player_index].iter().filter(|&order| self.order_trash(frame, *order)).copied().collect()
 	}
 
+	pub fn safe_actions(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
+		self.obvious_playables(frame, player_index).iter().chain(self.thinks_trash(frame, player_index).iter()).copied().collect::<Vec<_>>()
+	}
+
 	pub fn thinks_loaded(&self, frame: &Frame, player_index: usize) -> bool {
-		!self.thinks_playables(frame, player_index).is_empty() || !self.thinks_trash(frame, player_index).is_empty()
+		!self.obvious_playables(frame, player_index).is_empty() || !self.thinks_trash(frame, player_index).is_empty()
 	}
 
 	/** Returns how far the identity is from playable (through cards known by this player). 0 means that it is playable.*/

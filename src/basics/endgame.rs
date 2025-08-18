@@ -63,9 +63,10 @@ impl EndgameSolver {
 	}
 
 	pub fn solve_game(&mut self, game: &Game) -> Result<(PerformAction, Frac), String> {
-		if game.state.score() + 1 == game.state.max_score() {
-			let winning_play = game.state.our_hand().iter().find(|&&o|
-				game.me().thoughts[o].identity(&IdOptions { infer: true, ..Default::default() }).is_some_and(|i| game.state.is_playable(i)));
+		let Game { state, .. } = game;
+		if state.score() + 1 == state.max_score() {
+			let winning_play = state.our_hand().iter().find(|&&o|
+				game.me().thoughts[o].identity(&IdOptions { infer: true, ..Default::default() }).is_some_and(|i| state.is_playable(i)));
 
 			if let Some(order) = winning_play {
 				return Ok((PerformAction::Play { target: *order }, Frac::ONE));
@@ -75,21 +76,22 @@ impl EndgameSolver {
 		let deadline = Instant::now() + Duration::from_millis(1000);
 		let (remaining_ids, own_ids) = find_remaining_ids(game);
 
-		if remaining_ids.iter().filter(|(id, v)| !game.state.is_basic_trash(**id) && v.all).count() > 2 {
+		if remaining_ids.iter().filter(|(id, v)| !state.is_basic_trash(**id) && v.all).count() > 2 {
 			return Err(format!("couldn't find any {}!", remaining_ids.keys().filter_map(|i|
-				(!game.state.is_basic_trash(*i)).then_some(game.state.log_id(*i))).join(",")));
+				(!state.is_basic_trash(*i)).then_some(state.log_id(*i))).join(",")));
 		}
 
 		let level = log::max_level();
 		log::set_max_level(log::LevelFilter::Off);
 
-		let mut state = game.state.clone();
+		let mut hypo_game = game.clone();
 		let mut unknown_own = Vec::new();
-		let linked_orders = game.me().linked_orders(&state);
+		let linked_orders = game.me().linked_orders(state);
 
 		for (order, id) in &own_ids {
 			if let Some(id) = id {
-				state.deck[*order].base = Some(*id);
+				hypo_game.state.deck[*order].base = Some(*id);
+				hypo_game.deck_ids[*order] = Some(*id);
 			}
 			else {
 				unknown_own.push(order);
@@ -100,16 +102,7 @@ impl EndgameSolver {
 		info!("unknown_own {:?}, cards left {}", unknown_own, state.cards_left);
 
 		if total_unknown == 0 {
-			let mut hypo_game = game.clone();
-			hypo_game.state = state;
-
-			for (order, id) in &own_ids {
-				if let Some(id) = id {
-					hypo_game.deck_ids[*order] = Some(*id);
-				}
-			}
-
-			match self.winnable(&hypo_game, game.state.our_player_index, &remaining_ids, 0, &deadline) {
+			match self.winnable(&hypo_game, state.our_player_index, &remaining_ids, 0, &deadline) {
 				Err(_) => {
 					log::set_max_level(level);
 					return Err("couldn't find a winning strategy.".to_owned());
@@ -211,25 +204,25 @@ impl EndgameSolver {
 
 		info!("arrangements {}", arrangements.len());
 
-
 		let mut best_performs: HashMap<PerformAction, (Frac, usize)> = HashMap::new();
 
-		let mut eval = |hypo_game: &Game, GameArr { prob, remaining, .. }| {
-			info!("\n{}", format!("arrangement {} {}", hypo_game.state.our_hand().iter().map(|&o| hypo_game.state.log_iden(&hypo_game.state.deck[o])).join(","), prob).purple());
-			let all_actions = self.possible_actions(hypo_game, state.our_player_index, &remaining, &deadline);
+		let mut eval = |e_game: &Game, GameArr { prob, remaining, .. }| {
+			let Game { state: e_state, .. } = e_game;
+			info!("\n{}", format!("arrangement {} {}", e_state.our_hand().iter().map(|&o| e_state.log_iden(&e_game.state.deck[o])).join(","), prob).purple());
+			let all_actions = self.possible_actions(e_game, state.our_player_index, &remaining, &deadline);
 
 			if all_actions.is_empty() {
 				info!("couldn't find any valid actions");
 				return;
 			}
 
-			info!("{}", format!("possible actions: {:?}", all_actions.iter().map(|(action,_)| action.fmt(hypo_game)).join(", ")).green());
+			info!("{}", format!("possible actions: {:?}", all_actions.iter().map(|(action,_)| action.fmt(e_game)).join(", ")).green());
 
-			let arrs = EndgameSolver::gen_arrs(hypo_game, &remaining, all_actions.iter().all(|(p,_)| p.is_clue()));
-			let best_result = self.optimize(hypo_game, arrs, all_actions, state.our_player_index, 0, &deadline);
+			let arrs = EndgameSolver::gen_arrs(e_game, &remaining, all_actions.iter().all(|(p,_)| p.is_clue()));
+			let best_result = self.optimize(e_game, arrs, all_actions, state.our_player_index, 0, &deadline);
 
 			if let Ok((performs, winrate)) = best_result {
-				info!("arrangement winnable! {} (winrate {})", performs.iter().map(|perform| perform.fmt(hypo_game)).join(","), winrate);
+				info!("arrangement winnable! {} (winrate {})", performs.iter().map(|perform| perform.fmt(e_game)).join(","), winrate);
 				for perform in performs {
 					let index = best_performs.len();
 					best_performs.entry(perform).and_modify(|(w,_)| *w += winrate * prob).or_insert((winrate * prob, index));
@@ -238,7 +231,7 @@ impl EndgameSolver {
 		};
 
 		if arrangements.is_empty() {
-			eval(game, GameArr { prob: Frac::ONE, remaining: HashMap::new(), drew: None });
+			eval(&hypo_game, GameArr { prob: Frac::ONE, remaining: HashMap::new(), drew: None });
 		}
 		else {
 			for Arrangement { ids, prob, remaining } in arrangements {
@@ -247,18 +240,15 @@ impl EndgameSolver {
 					return Err("timed out".to_string());
 				}
 
-				let mut hypo_game = game.clone();
-				let mut new_deck = state.deck.clone();
+				let mut hypo = hypo_game.clone();
 
 				for i in 0..ids.len() {
 					let order = unknown_own[i];
-					new_deck[*order].base = Some(ids[i]);
-					hypo_game.deck_ids[*order] = Some(ids[i]);
+					hypo.state.deck[*order].base = Some(ids[i]);
+					hypo.deck_ids[*order] = Some(ids[i]);
 				}
 
-				hypo_game.state.deck = new_deck;
-
-				eval(&hypo_game, GameArr { prob, remaining: remaining.clone(), drew: None });
+				eval(&hypo, GameArr { prob, remaining: remaining.clone(), drew: None });
 			}
 		};
 
@@ -379,7 +369,7 @@ impl EndgameSolver {
 			};
 		}
 
-		let playables = game.players[player_turn].thinks_playables(&game.frame(), player_turn);
+		let playables = game.players[player_turn].obvious_playables(&game.frame(), player_turn);
 		for order in playables {
 			if Instant::now() > *deadline {
 				return Vec::new();
@@ -400,45 +390,63 @@ impl EndgameSolver {
 			}
 		}
 
-		let default_clue = PerformAction::Rank { target: 0, value: 0 };
-		let too_many_clues = game.state.action_list.concat().iter().rev()
-			.take_while(|action| !matches!(action, Action::Play(_) | Action::Discard(_)))
-			.filter(|action| matches!(action, Action::Clue(_))).count() > game.state.num_players;
-		let clue_winnable = state.clue_tokens > 0 && !too_many_clues && match self.winnable_if(state, player_turn, &default_clue, remaining, deadline) {
-			SimpleResult::Unwinnable => false,
-			SimpleResult::AlwaysWinnable => true,
-			_ => panic!("Shouldn't return WinnableWithDraws enum variant from giving a clue!")
+		let add_clues = |solver: &mut EndgameSolver, actions: &mut Vec<(PerformAction, Vec<Identity>)>| {
+			if Instant::now() > *deadline {
+				return;
+			}
+
+			let default_clue = PerformAction::Rank { target: 0, value: 0 };
+			let too_many_clues = game.state.action_list.concat().iter().rev()
+				.take_while(|action| !matches!(action, Action::Play(_) | Action::Discard(_)))
+				.filter(|action| matches!(action, Action::Clue(_))).count() > game.state.num_players;
+			let clue_winnable = state.clue_tokens > 0 && !too_many_clues && match solver.winnable_if(state, player_turn, &default_clue, remaining, deadline) {
+				SimpleResult::Unwinnable => false,
+				SimpleResult::AlwaysWinnable => true,
+				_ => panic!("Shouldn't return WinnableWithDraws enum variant from giving a clue!")
+			};
+
+			if clue_winnable {
+				// If everyone knows exactly where all the remaining useful cards are, clues are only useful for stalling, so we only need to consider 1 clue
+				let fully_known = (remaining.is_empty() || (remaining.len() == 1 && state.is_basic_trash(*remaining.iter().next().unwrap().0))) &&
+					state.hands.concat().iter().all(|&o| {
+						match state.deck[o].id() {
+							None => true,
+							Some(id) => state.is_basic_trash(id) || common.thoughts[o].matches(&id, &MatchOptions { infer: true, ..Default::default() })
+						}
+					});
+
+				for perform in game.convention.find_all_clues(game, player_turn) {
+					actions.push((perform, Vec::new()));
+				if fully_known {
+						break;
+					}
+				}
+			}
 		};
 
-		if clue_winnable {
-			// If everyone knows exactly where all the remaining useful cards are, clues are only useful for stalling, so we only need to consider 1 clue
-			let fully_known = (remaining.is_empty() || (remaining.len() == 1 && state.is_basic_trash(*remaining.iter().next().unwrap().0))) &&
-				state.hands.concat().iter().all(|&o| {
-					match state.deck[o].id() {
-						None => true,
-						Some(id) => state.is_basic_trash(id) || common.thoughts[o].matches(&id, &MatchOptions { infer: true, ..Default::default() })
-					}
-				});
+		let add_discards = |solver: &mut EndgameSolver, actions: &mut Vec<(PerformAction, Vec<Identity>)>| {
+			if Instant::now() > *deadline {
+				return;
+			}
 
-			for perform in game.convention.find_all_clues(game, player_turn) {
-				actions.push((perform, Vec::new()));
-				if fully_known {
-					break;
+			if state.pace() > 0 {
+				for perform in game.convention.find_all_discards(game, player_turn) {
+					match try_action(solver, perform) {
+						None => continue,
+						Some(r) => actions.push(r),
+					};
 				}
 			}
+		};
+
+		// If every hand other than ours is trash, try discarding before cluing
+		if state.hands.iter().enumerate().all(|(i, hand)| i == player_turn || hand.iter().all(|&o| state.is_basic_trash(state.deck[o].id().unwrap()))) {
+			add_discards(self, &mut actions);
+			add_clues(self, &mut actions);
 		}
-
-		if state.pace() > 0 {
-			for perform in game.convention.find_all_discards(game, player_turn) {
-				if Instant::now() > *deadline {
-					return Vec::new();
-				}
-
-				match try_action(self, perform) {
-					None => continue,
-					Some(r) => actions.push(r),
-				};
-			}
+		else {
+			add_clues(self, &mut actions);
+			add_discards(self, &mut actions);
 		}
 
 		actions

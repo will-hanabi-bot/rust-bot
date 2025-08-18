@@ -69,7 +69,7 @@ impl Convention for Reactor {
 				Reactor::interpret_stable(prev, game, action, false)
 			}
 		}
-		else if prev.common.thinks_locked(&prev.frame(), *giver) || game.state.in_endgame() || (prev.state.clue_tokens == 8 && prev.state.turn_count != 1) {
+		else if prev.common.thinks_locked(&prev.frame(), *giver) || game.state.in_endgame() || prev.state.clue_tokens == 8 {
 			Reactor::interpret_stable(prev, game, action, true)
 		}
 		else {
@@ -79,8 +79,8 @@ impl Convention for Reactor {
 				let player_index = (giver + i) % game.state.num_players;
 
 				// The clue may reveal a new playable, or the clue may fix a bad-touched card that looked playable previously
-				let old_playables = prev.common.thinks_playables(&prev.frame(), player_index);
-				let new_playables = game.common.thinks_playables(&game.frame(), player_index);
+				let old_playables = prev.common.obvious_playables(&prev.frame(), player_index);
+				let new_playables = game.common.obvious_playables(&game.frame(), player_index);
 				let playables = old_playables.iter().filter(|o| new_playables.contains(o)).collect::<Vec<_>>();
 
 				if playables.is_empty() {
@@ -103,7 +103,7 @@ impl Convention for Reactor {
 						Reactor::interpret_stable(prev, game, action, false)
 					}
 					else {
-						let prev_playables = prev.players[*target].thinks_playables(&prev.frame(), *target);
+						let prev_playables = prev.players[*target].obvious_playables(&prev.frame(), *target);
 
 						// Urgent fix on previous playable
 						if allowable_fix && clued_resets.iter().chain(duplicate_reveals.iter()).any(|o| prev_playables.contains(o)) {
@@ -175,7 +175,7 @@ impl Convention for Reactor {
 	}
 
 	fn take_action(&self, game: &Game) -> PerformAction {
-		let Game { state, meta, .. } = game;
+		let Game { common, state, meta, .. } = game;
 		let frame = game.frame();
 		let me = game.me();
 
@@ -221,7 +221,7 @@ impl Convention for Reactor {
 		info!("playables {playable_orders:?}");
 		info!("trash {trash_orders:?}");
 
-		let all_clues = if state.clue_tokens == 0 { Vec::new() } else {
+		let all_clues = if state.clue_tokens == 0 || common.waiting.as_ref().is_some_and(|w| w.receiver == state.our_player_index) { Vec::new() } else {
 			(1..state.num_players).flat_map(|offset| {
 				let target = (state.our_player_index + offset) % state.num_players;
 				state.all_valid_clues(target)
@@ -269,7 +269,7 @@ impl Convention for Reactor {
 		let mut all_actions = all_clues.into_iter().chain(all_plays).chain(all_discards).collect::<Vec<_>>();
 
 		if !cant_discard && (state.clue_tokens == 0 || num_plays == 0) && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
-			if let Some(chop) = state.our_hand().iter().find(|&&o| !state.deck[o].clued) {
+			if let Some(chop) = state.our_hand().iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None) {
 				all_actions.push((
 					PerformAction::Discard { target: *chop },
 					Action::discard(state.our_player_index, *chop, -1, -1, false)

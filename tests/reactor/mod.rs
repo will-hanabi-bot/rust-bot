@@ -110,7 +110,7 @@ fn it_understands_a_reverse_reactive_clue() {
 
 	take_turn(&mut game, "Bob plays b1, drawing y3");
 
-	assert!(game.common.thinks_playables(&game.frame(), Player::Cathy as usize).contains(&game.state.hands[Player::Cathy as usize][1]));
+	assert!(game.common.obvious_playables(&game.frame(), Player::Cathy as usize).contains(&game.state.hands[Player::Cathy as usize][1]));
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn it_doesnt_give_a_bad_connecting_clue() {
 		&["b1", "y1", "g1", "g2", "p2"],
 		&["y1", "p3", "g5", "p5", "r5"],
 	], TestOptions {
-		play_stacks: Some(&[3, 3, 4, 4, 1]),
+		play_stacks: Some(&[1, 1, 1, 1, 1]),
 		// Bob's slots 4 and 5 are clued with 2.
 		init: Box::new(|game: &mut Game| {
 			pre_clue(game, Player::Bob, 4, &[TestClue { kind: ClueKind::RANK, value: 2, giver: Player::Alice }]);
@@ -250,18 +250,30 @@ fn it_doesnt_give_a_bad_connecting_clue() {
 		clue: BaseClue { kind: ClueKind::COLOUR, value: Colour::Green as usize }
 	};
 
-	let new_game = game.simulate_clue(&clue, SimOpts::default());
+	let new_game = game.simulate_clue(&clue, SimOpts { log: true, ..Default::default() });
 	let result = Reactor::get_result(&game, &new_game, &clue);
 
 	assert_eq!(result, -100.0);
+}
 
-	// take_turn(&mut game, "Alice clues green to Cathy");
+#[test]
+fn it_understands_bob_wont_react_if_alternative_is_on_them() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["y1", "r2", "g1", "g2", "p2"],
+		&["r3", "p4", "g5", "y4", "r4"],
+	], TestOptions {
+		play_stacks: Some(&[1, 0, 0, 0, 0]),
+		// Cathy's g5 is clued with green.
+		init: Box::new(|game: &mut Game| {
+			pre_clue(game, Player::Cathy, 3, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Green as usize, giver: Player::Alice }]);
+		}),
+		clue_tokens: 8,
+		..TestOptions::default()
+	});
 
-	// assert_eq!(game.last_move, Some(rust_bot::basics::game::Interp::Reactor(ReactorInterp::Clue(rust_bot::reactor::ClueInterp::Illegal))));
+	// Trying to get a finesse, but Bob doesn't see another clue for Alice to give.
+	take_turn(&mut game, "Alice clues 5 to Cathy");
 
-	// // Cathy is called to play g1.
-	// // ex_asserts::has_inferences(&game, None, Player::Cathy, 1, &["g1"]);
-	// assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][0]].status, CardStatus::CalledToPlay);
-
-	// take_turn(&mut game, "Bob plays b1, drawing p4");
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][1]].status, CardStatus::None);
 }

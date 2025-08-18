@@ -223,7 +223,7 @@ impl Reactor {
 			return;
 		}
 
-		let known_playables = prev.common.thinks_playables(&prev.frame(), reacter);
+		let known_playables = prev.common.obvious_playables(&prev.frame(), reacter);
 
 		// We were waiting for a response inversion and they reacted unnaturally
 		if inverted {
