@@ -71,14 +71,14 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 		let id = Identity { suit_index: suit_index as usize, rank: rank as usize };
 
 		state.hands[player_index].retain(|&o| o != order);
-		state.discard_stacks[id.suit_index][id.rank - 1] += 1;
+		state.discard_stacks[id.suit_index][id.rank - 1].push(order);
 
 		// Assign identity
 		state.deck[order].base = Some(id);
 		deck_ids[order] = Some(id);
 
 		// Discarded all copies of an identity
-		if state.discard_stacks[id.suit_index][id.rank - 1] == state.card_count(id) {
+		if state.discard_stacks[id.suit_index][id.rank - 1].len() == state.card_count(id) {
 			state.max_ranks[id.suit_index] = min(state.max_ranks[id.suit_index], id.rank - 1);
 		}
 
@@ -188,6 +188,7 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 		if common.thoughts[order].inferred.is_empty() && !common.thoughts[order].reset {
 			common.thoughts[order].reset_inferences();
 			meta[order].status = CardStatus::None;
+			meta[order].by = None;
 		}
 	}
 
@@ -223,6 +224,7 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 	for order in resets {
 		if meta[order].status == CardStatus::CalledToPlay {
 			meta[order].status = CardStatus::None;
+			meta[order].by = None;
 		}
 	}
 }

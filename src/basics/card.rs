@@ -155,6 +155,7 @@ pub struct ConvData {
 	pub trash: bool,
 	pub status: CardStatus,
 	pub reasoning: Vec<usize>,
+	pub by: Option<usize>,
 }
 
 impl ConvData {
@@ -166,11 +167,20 @@ impl ConvData {
 			trash: false,
 			status: CardStatus::None,
 			reasoning: Vec::new(),
+			by: None,
 		}
 	}
 
 	pub fn cm(&self) -> bool {
 		self.status == CardStatus::ChopMoved
+	}
+
+	pub fn clear(&mut self) {
+		self.focused = false;
+		self.urgent = false;
+		self.trash = false;
+		self.status = CardStatus::None;
+		self.by = None;
 	}
 }
 

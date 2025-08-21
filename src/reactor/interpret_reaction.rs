@@ -147,9 +147,13 @@ impl Reactor {
 		common.thoughts[order].old_inferred = Some(common.thoughts[order].inferred);
 		common.thoughts[order].inferred.retain(|i| !prev.state.is_critical(i));
 		meta.status = CardStatus::CalledToDiscard;
-		meta.trash = true;
+		meta.by = Some(wc.giver);
 
-		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+		if common.thoughts[order].inferred.is_empty() {
+			meta.trash = true;
+		}
+
+		if meta.reasoning.last().is_none_or(|r| *r != state.turn_count) {
 			meta.reasoning.push(state.turn_count);
 		}
 	}
@@ -162,9 +166,10 @@ impl Reactor {
 		common.thoughts[order].old_inferred = Some(common.thoughts[order].inferred);
 		common.thoughts[order].inferred.retain(|i| state.is_playable(i));
 		meta.status = CardStatus::CalledToPlay;
+		meta.by = Some(wc.giver);
 		meta.focused = true;
 
-		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+		if meta.reasoning.last().is_none_or(|r| *r != state.turn_count) {
 			meta.reasoning.push(state.turn_count);
 		}
 	}
@@ -255,7 +260,7 @@ impl Reactor {
 			}
 
 			info!("reactive play+{}, reacter {} (slot {}) receiver {} (slot {}), focus slot {} (order {})",
-				if clue.kind == ClueKind::COLOUR { "play" } else { "dc" },
+				if clue.kind == ClueKind::COLOUR { "dc" } else { "play" },
 				game.state.player_names[reacter], react_slot, game.state.player_names[receiver], target_slot, focus_slot, game.state.hands[receiver][target_slot - 1]);
 		}
 	}

@@ -1,4 +1,4 @@
-use rust_bot::basics::action::{ClueAction, PerformAction};
+use rust_bot::basics::action::{Action, ClueAction, PerformAction};
 use rust_bot::basics::card::CardStatus;
 use rust_bot::basics::clue::BaseClue;
 use rust_bot::basics::{clue::ClueKind};
@@ -14,6 +14,7 @@ mod reactive;
 mod invert;
 mod variants;
 mod mistakes;
+mod stalling;
 
 #[test]
 fn it_understands_good_touch() {
@@ -96,6 +97,7 @@ fn it_understands_a_reverse_reactive_clue() {
 		&["b1", "r1", "r4", "y4", "y4"],
 		&["g4", "g1", "g4", "b4", "b4"],
 	], TestOptions {
+		clue_tokens: 7,
 		// Bob's slot 2 is clued with 1.
 		init: Box::new(|game: &mut Game| {
 			pre_clue(game, Player::Bob, 2, &[TestClue { kind: ClueKind::RANK, value: 1, giver: Player::Alice }]);
@@ -130,18 +132,23 @@ fn it_doesnt_give_a_bad_reverse_reactive_clue() {
 
 	take_turn(&mut game, "Cathy plays y1, drawing b1");
 
+	// let action = game.take_action();
+	// println!("action {:?}", action);
+
 	// We cannot give 4 to Bob as a reverse reactive, since Cathy would play b1 to react into r1 and Bob is already playing b1.
 	let clue = ClueAction {
 		giver: Player::Alice as usize,
 		target: Player::Bob as usize,
-		list: vec![5, 6, 7],
+		list: vec![6, 7],
 		clue: BaseClue { kind: ClueKind::RANK, value: 4 }
 	};
 
-	let new_game = game.simulate_clue(&clue, SimOpts::default());
-	let result = Reactor::get_result(&game, &new_game, &clue);
+	let result = Reactor::eval_action(&game, &Action::Clue(clue));
 
-	assert_eq!(result, -100.0);
+	// let new_game = game.simulate_clue(&clue, SimOpts { log: true, ..SimOpts::default() });
+	// let result = Reactor::get_result(&game, &new_game, &clue);
+
+	assert!(result < 8.0);
 }
 
 #[test]

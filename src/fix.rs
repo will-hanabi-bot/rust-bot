@@ -31,14 +31,16 @@ pub fn check_fix(prev: &Game, game: &Game, action: &ClueAction) -> (Vec<usize>, 
 pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<Identity>) -> Vec<usize> {
 	let Game { state, players, .. } = game;
 
-	if let Some(id) = id {
-		if state.is_playable(id) {
-			return vec![99];
-		}
+	if let Some(id) = id && state.is_playable(id) {
+		return vec![99];
 	}
 
 	if start == target {
 		return players[target].obvious_playables(&game.frame(), target);
+	}
+
+	if game.state.ended() {
+		return Vec::new();
 	}
 
 	let next_player_index = state.next_player_index(start);

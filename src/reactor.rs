@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::basics;
 use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity};
 use crate::basics::endgame::{EndgameSolver};
+use crate::basics::game::SimOpts;
 use crate::basics::game::{Convention, frame::Frame, Game, Interp};
 use crate::basics::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
 use crate::basics::util;
@@ -34,10 +35,7 @@ impl Reactor {
 		if let Some(urgent) = state.hands[player_index].iter().find(|&&o| meta[o].urgent) && action_order != *urgent {
 			let meta = &mut game.meta[*urgent];
 			warn!("removing status on {urgent}, didn't react appropriately");
-			meta.status = CardStatus::None;
-			meta.urgent = false;
-			meta.trash = false;
-			meta.focused = false;
+			meta.clear();
 			if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
 				meta.reasoning.push(state.turn_count);
 			}
@@ -45,6 +43,11 @@ impl Reactor {
 			common.thoughts[*urgent].inferred = common.thoughts[*urgent].old_inferred.unwrap_or_else(|| panic!("no old_inferred on {urgent}!"));
 			common.thoughts[*urgent].old_inferred = None;
 		}
+	}
+
+	fn chop(game: &Game, player_index: usize) -> Option<&usize> {
+		let Game { state, meta, .. } = game;
+		state.hands[player_index].iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None)
 	}
 }
 
@@ -119,10 +122,20 @@ impl Convention for Reactor {
 
 		game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(interp.unwrap_or(ClueInterp::Mistake))));
 
-		let frame = Frame::new(&game.state, &game.meta);
-		game.common.good_touch_elim(&frame);
-		game.common.refresh_links(&frame, true);
-		basics::elim(game, true);
+		let signalled_plays = game.state.hands.concat().into_iter().filter(|&o|
+			prev.meta[o].status != CardStatus::CalledToPlay && game.meta[o].status == CardStatus::CalledToPlay
+		).collect::<Vec<_>>();
+
+		// let frame = Frame::new(&game.state, &game.meta);
+		// game.common.good_touch_elim(&frame);
+		// game.common.refresh_links(&frame, true);
+		basics::elim(game, false);
+
+		let signalled_plays_after_elim = game.state.hands.concat().into_iter().filter(|&o| game.meta[o].status == CardStatus::CalledToPlay).collect::<Vec<_>>();
+		if signalled_plays_after_elim.len() < signalled_plays.len() {
+			warn!("lost play signal on {:?} after elim!", signalled_plays.iter().filter(|o| !signalled_plays_after_elim.contains(o)).collect::<Vec<_>>());
+			game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake)));
+		}
 		game.next_interp = None;
 	}
 
@@ -139,11 +152,7 @@ impl Convention for Reactor {
 				thought.old_inferred = None;
 				thought.info_lock = None;
 
-				let meta = &mut game.meta[order];
-				meta.status = CardStatus::None;
-				meta.focused = false;
-				meta.trash = false;
-				meta.urgent = false;
+				game.meta[order].clear();
 			}
 
 			game.common.waiting = None;
@@ -154,10 +163,10 @@ impl Convention for Reactor {
 			Reactor::react_discard(prev, game, *player_index, *order, &wc);
 		}
 
-		let frame = Frame::new(&game.state, &game.meta);
-		game.common.good_touch_elim(&frame);
-		game.common.refresh_links(&frame, true);
-		basics::elim(game, true);
+		// let frame = Frame::new(&game.state, &game.meta);
+		// game.common.good_touch_elim(&frame);
+		// game.common.refresh_links(&frame, true);
+		basics::elim(game, false);
 	}
 
 	fn interpret_play(&self, prev: &Game, game: &mut Game, action: &PlayAction) {
@@ -168,10 +177,10 @@ impl Convention for Reactor {
 			Reactor::react_play(prev, game, *player_index, *order, &wc);
 		}
 
-		let frame = Frame::new(&game.state, &game.meta);
-		game.common.good_touch_elim(&frame);
-		game.common.refresh_links(&frame, true);
-		basics::elim(game, true);
+		// let frame = Frame::new(&game.state, &game.meta);
+		// game.common.good_touch_elim(&frame);
+		// game.common.refresh_links(&frame, true);
+		basics::elim(game, false);
 	}
 
 	fn take_action(&self, game: &Game) -> PerformAction {
@@ -211,7 +220,7 @@ impl Convention for Reactor {
 		}
 
 		let mut playable_orders = me.thinks_playables(&frame, state.our_player_index);
-		let trash_orders = me.thinks_trash(&frame, state.our_player_index);
+		let discard_orders = me.discardable(&frame, state.our_player_index);
 
 		// Retain only signalled playables if there is at least 1 such
 		if playable_orders.iter().any(|&o| me.order_kp(&frame, o)) {
@@ -219,7 +228,7 @@ impl Convention for Reactor {
 		}
 
 		info!("playables {playable_orders:?}");
-		info!("trash {trash_orders:?}");
+		info!("discardable {discard_orders:?}");
 
 		let all_clues = if state.clue_tokens == 0 || common.waiting.as_ref().is_some_and(|w| w.receiver == state.our_player_index) { Vec::new() } else {
 			(1..state.num_players).flat_map(|offset| {
@@ -248,13 +257,13 @@ impl Convention for Reactor {
 
 		let cant_discard = state.clue_tokens == 8 ||
 			(state.pace() == 0 && (num_clues > 0 || num_plays > 0)) ||
-			(num_plays > 0 && game.common.waiting.as_ref().is_some_and(|w| w.inverted));	// If we have a play and there's a potential inversion
+			(num_plays > 0 && game.common.waiting.as_ref().is_some_and(|w| w.reacter == state.next_player_index(state.our_player_index)));	// If we have a play and there's a potential inversion
 		info!("can discard: {}", !cant_discard);
 
 		let all_discards = if cant_discard { Vec::new() } else {
-			trash_orders.iter().map(|&order| {
+			discard_orders.iter().map(|&order| {
 				(PerformAction::Discard { target: order },
-				match me.thoughts[order].identity(&IdOptions { infer: true, ..Default::default() }) {
+				match me.thoughts[order].id() {
 					Some(Identity { suit_index, rank }) => {
 						Action::discard(state.our_player_index, order, suit_index as i32, rank as i32, false)
 					}
@@ -269,7 +278,7 @@ impl Convention for Reactor {
 		let mut all_actions = all_clues.into_iter().chain(all_plays).chain(all_discards).collect::<Vec<_>>();
 
 		if !cant_discard && (state.clue_tokens == 0 || num_plays == 0) && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
-			if let Some(chop) = state.our_hand().iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None) {
+			if let Some(chop) = Reactor::chop(game, state.our_player_index) {
 				all_actions.push((
 					PerformAction::Discard { target: *chop },
 					Action::discard(state.our_player_index, *chop, -1, -1, false)
@@ -282,8 +291,7 @@ impl Convention for Reactor {
 		}
 
 		all_actions.iter().fold((f32::MIN, None), |(best_value, best), curr| {
-			info!("{}", format!("===== Predicting value for ({}) =====", curr.1.fmt(state)).green());
-			let value = Reactor::predict_value(game, &curr.1);
+			let value = Reactor::eval_action(game, &curr.1);
 			if value > best_value {
 				(value, Some(curr))
 			} else {
@@ -293,7 +301,7 @@ impl Convention for Reactor {
 	}
 
 	fn update_turn(&self, _prev: &Game, game: &mut Game, action: &TurnAction) {
-		let Game { common, state, .. } = game;
+		let Game { common, state, meta, .. } = game;
 		let TurnAction { current_player_index, .. } = action;
 
 		if *current_player_index != -1 {
@@ -302,10 +310,26 @@ impl Convention for Reactor {
 			if let Some(wc) = &common.waiting && wc.reacter == last_player_index {
 				common.waiting = None;
 			}
+
+			for &order in &state.hands[*current_player_index as usize] {
+				if meta[order].status == CardStatus::CalledToPlay {
+					common.thoughts[order].inferred.retain(|i| state.is_playable(i));
+
+					if common.thoughts[order].inferred.is_empty() {
+						common.thoughts[order].reset_inferences();
+						meta[order].status = CardStatus::None;
+						meta[order].by = None;
+						meta[order].trash = true;
+					}
+				}
+			}
+			let frame = Frame::new(state, meta);
+			game.common.refresh_links(&frame, true);
+			basics::elim(game, true);
 		}
 	}
 
-	fn find_all_clues(&self, game: &Game, player_index: usize) -> Vec<PerformAction> {
+	fn find_all_clues(&self, game: &Game, giver: usize) -> Vec<PerformAction> {
 		let Game { state, .. } = game;
 
 		let level = log::max_level();
@@ -314,7 +338,7 @@ impl Convention for Reactor {
 		let mut all_clues = Vec::new();
 
 		for i in 0..state.num_players {
-			if i == player_index {
+			if i == giver {
 				continue;
 			}
 
@@ -322,16 +346,17 @@ impl Convention for Reactor {
 				let base_clue = clue.to_base();
 				let list = state.clue_touched(&state.hands[clue.target], &base_clue);
 
-				let action = Action::Clue(ClueAction { giver: state.our_player_index, target: clue.target, list, clue: base_clue });
+				let action = ClueAction { giver, target: clue.target, list, clue: base_clue };
 				let touched = state.clue_touched(&state.hands[clue.target], &base_clue);
 				// Do not simulate clues that touch only previously-clued trash
 				if touched.iter().all(|&o| state.deck[o].clued && state.is_basic_trash(state.deck[o].id().unwrap())) {
 					continue;
 				}
-				info!("{}", format!("===== Predicting value for ({}) =====", action.fmt(state)).green());
-				let value = Reactor::predict_value(game, &action);
+				info!("{}", format!("===== Predicting value for {} =====", clue.fmt(state)).green());
+				let hypo_game = game.simulate_clue(&action, SimOpts { log: true, ..SimOpts::default() });
+				let value = Reactor::get_result(game, &hypo_game, &action);
 
-				if value > -5.0 {
+				if value > 0.0 {
 					all_clues.push(util::clue_to_perform(&clue));
 				}
 			}
@@ -344,15 +369,9 @@ impl Convention for Reactor {
 
 	fn find_all_discards(&self, game: &Game, player_index: usize) -> Vec<PerformAction> {
 		let Game { common, state, .. } = game;
-		let trash = common.thinks_trash(&game.frame(), player_index);
+		let trash = common.discardable(&game.frame(), player_index);
 
-		if trash.is_empty() {
-			vec![PerformAction::Discard { target: state.hands[player_index][0] }]
-		}
-		else {
-			vec![trash.into_iter().map(|o| {
-				PerformAction::Discard { target: o }
-			}).next().unwrap()]
-		}
+		let target = trash.first().or_else(|| Reactor::chop(game, player_index)).copied().unwrap_or_else(|| game.players[player_index].locked_discard(state, player_index));
+		vec![PerformAction::Discard { target }]
 	}
 }

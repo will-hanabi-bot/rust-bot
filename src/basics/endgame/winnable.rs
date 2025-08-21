@@ -355,7 +355,7 @@ impl EndgameSolver {
 						}
 						else {
 							new_state.strikes += 1;
-							new_state.discard_stacks[id.suit_index][id.rank - 1] += 1;
+							new_state.discard_stacks[id.suit_index][id.rank - 1].push(*target);
 						}
 					}
 				}
@@ -363,7 +363,7 @@ impl EndgameSolver {
 			}
 			PerformAction::Discard { target, .. } => {
 				if let Some(id) = state.deck[*target].id() {
-					new_state.discard_stacks[id.suit_index][id.rank - 1] += 1;
+					new_state.discard_stacks[id.suit_index][id.rank - 1].push(*target);
 				}
 
 				new_state.clue_tokens = std::cmp::min(state.clue_tokens + 1, 8);

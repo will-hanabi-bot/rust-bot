@@ -120,9 +120,9 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 	for short in test_options.discarded {
 		let id = state.expand_short(short);
 		let Identity { suit_index, rank } = id;
-		state.discard_stacks[suit_index][rank - 1] += 1;
+		state.discard_stacks[suit_index][rank - 1].push(99);
 
-		if state.discard_stacks[suit_index][rank - 1] > state.card_count(id) {
+		if state.discard_stacks[suit_index][rank - 1].len() > state.card_count(id) {
 			state.max_ranks[suit_index] = std::cmp::min(state.max_ranks[suit_index], rank - 1);
 		}
 	}

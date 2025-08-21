@@ -7,7 +7,7 @@ use crate::basics;
 use crate::basics::action::{Action, ClueAction};
 use crate::basics::card::{CardStatus, Identifiable, Identity, IdOptions};
 use crate::basics::clue::{Clue, ClueKind};
-use crate::basics::game::{frame::Frame, Game};
+use crate::basics::game::Game;
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::WaitingConnection;
 use crate::basics::state::State;
@@ -37,7 +37,7 @@ impl Reactor {
 		let bob = game.state.next_player_index(*giver);
 
 		// Check for response inversion
-		if *target != bob && *target != game.state.our_player_index && Reactor::bad_stable(prev, game, action, interp.as_ref().unwrap_or(&ClueInterp::Mistake), stall) {
+		if *target != bob && Reactor::bad_stable(prev, game, action, interp.as_ref().unwrap_or(&ClueInterp::Mistake), stall) {
 			// Overwrite game with prev
 			*game = prev.clone();
 			let Game { state, .. } = game;
@@ -90,13 +90,14 @@ impl Reactor {
 					game.common.thoughts[*focus].inferred.retain(|i| game.state.is_playable(i) && i.rank == clue.value);
 					game.common.thoughts[*focus].info_lock = Some(game.common.thoughts[*focus].inferred);
 					game.meta[*focus].focused = true;
+					game.meta[*focus].status = CardStatus::CalledToPlay;
 				}
 			}
 		}
 
-		let frame = Frame::new(&game.state, &game.meta);
-		game.common.good_touch_elim(&frame);
-		game.common.refresh_links(&frame, true);
+		// let frame = Frame::new(&game.state, &game.meta);
+		// game.common.good_touch_elim(&frame);
+		// game.common.refresh_links(&frame, true);
 
 		// Potential response inversion: don't allow response inversion if there's already a waiting connection
 		if game.common.waiting.is_none() && game.state.next_player_index(*giver) != *target {
@@ -114,6 +115,7 @@ impl Reactor {
 				inverted: true,
 				turn: game.state.turn_count
 			});
+			info!("writing potential response inversion!");
 		}
 
 		if !clued_resets.is_empty() || !duplicate_reveals.is_empty() {
@@ -123,8 +125,8 @@ impl Reactor {
 
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
-		let prev_playables = prev.common.obvious_playables(&prev.frame(), *target).into_iter().chain(connectable_simple(prev, state.next_player_index(*giver), *target, None)).collect::<Vec<_>>();
-		let playables = common.obvious_playables(&frame, *target).into_iter().chain(connectable_simple(game, state.next_player_index(*giver), *target, None)).collect::<Vec<_>>();
+		let prev_playables = prev.common.obvious_playables(&prev.frame(), *target).into_iter().chain(connectable_simple(prev, state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
+		let playables = common.obvious_playables(&frame, *target).into_iter().chain(connectable_simple(game, state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
 
 		info!("playables {playables:?}, prev_playables {prev_playables:?}");
 
@@ -184,7 +186,7 @@ impl Reactor {
 	/**
 	 * Returns true if there exists a non-bad touching ref play clue or a ref dc clue on trash to the clue target instead.
 	 */
-	fn alternative_clue(game: &Game, clue_target: usize) -> Option<Clue>{
+	fn alternative_clue(game: &Game, clue_target: usize, play_only: bool) -> Option<Clue>{
 		let Game { common, state,  .. } = game;
 
 		if game.no_recurse {
@@ -211,6 +213,10 @@ impl Reactor {
 						newly_touched.iter().all(|&o| common.thoughts[o].possible.intersect(&IdentitySet::from_iter(touch_possibilities(&base_clue, &state.variant))).iter().all(|i| state.is_basic_trash(i))))
 				}
 				ClueKind::RANK => {
+					if play_only {
+						continue;
+					}
+
 					if let Some(lock_order) = hand.iter().filter(|&&o| !state.deck[o].clued).min() && list.contains(lock_order) {
 						continue;
 					}
@@ -242,6 +248,15 @@ impl Reactor {
 			return true;
 		}
 
+		if prev.state.turn_count == 1 && action.clue.kind == ClueKind::RANK && let Some(clue) = Reactor::alternative_clue(prev, *target, true) {
+			warn!("bad turn 1 rank clue! {} is possible", clue.fmt(state));
+			return true;
+		}
+
+		if *target == game.state.our_player_index {
+			return false;
+		}
+
 		let bad_playable = state.hands[*target].iter().find(|&&o|
 			meta[o].status == CardStatus::CalledToPlay && prev.meta[o].status != CardStatus::CalledToPlay && !game.state.has_consistent_inferences(&common.thoughts[o]));
 
@@ -253,7 +268,7 @@ impl Reactor {
 		let bad_discard = state.hands[*target].iter().find(|&&o|
 			meta[o].status == CardStatus::CalledToDiscard && prev.meta[o].status != CardStatus::CalledToDiscard &&
 			(state.is_critical(state.deck[o].id().unwrap()) ||
-				(stall && !state.is_basic_trash(state.deck[o].id().unwrap()) && Reactor::alternative_clue(game, *target).is_some()))
+				(stall && !state.is_basic_trash(state.deck[o].id().unwrap()) && Reactor::alternative_clue(game, *target, false).is_some()))
 		);
 
 		if let Some(bad) = bad_discard {
@@ -263,7 +278,7 @@ impl Reactor {
 
 		// Check for bad lock
 		if *interp == ClueInterp::Lock {
-			if let Some(alt_clue) = Reactor::alternative_clue(game, *target) {
+			if let Some(alt_clue) = Reactor::alternative_clue(prev, *target, false) {
 				warn!("alternative clue {} was available!", alt_clue.fmt(state));
 				return true;
 			}
@@ -275,7 +290,7 @@ impl Reactor {
 
 		// Check for bad stall
 		if *interp == ClueInterp::Stall {
-			if let Some(alt_clue) = Reactor::alternative_clue(game, *target) {
+			if let Some(alt_clue) = Reactor::alternative_clue(prev, *target, false) {
 				warn!("alternative clue {} was available!", alt_clue.fmt(state));
 				return true;
 			}
@@ -515,7 +530,7 @@ impl Reactor {
 
 			// If they have an urgent discard, they can't play a connecting card. If they have an urgent playable, they can only play that card.
 			if let Some(urgent) = state.hands[player_index].iter().find(|&&o| meta[o].urgent) {
-				if meta[*urgent].trash {
+				if meta[*urgent].status == CardStatus::CalledToDiscard {
 					continue;
 				} else {
 					playables = vec![*urgent];
@@ -562,7 +577,7 @@ impl Reactor {
 
 	fn target_play(game: &mut Game, action: &ClueAction, target: usize, urgent: bool, stable: bool) -> Option<ClueInterp> {
 		let ClueAction { giver, .. } = action;
-		let holder = game.state.holder_of(target).unwrap();
+		let holder = game.state.holder_of(target);
 		let possible_conns = Reactor::delayed_plays(game, *giver, holder);
 
 
@@ -576,7 +591,8 @@ impl Reactor {
 			let meta = &mut game.meta[*conn_order];
 			meta.urgent = true;
 			meta.status = CardStatus::CalledToPlay;
-			if meta.reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
+			meta.by = Some(*giver);
+			if meta.reasoning.last().is_none_or(|r| *r != game.state.turn_count) {
 				meta.reasoning.push(game.state.turn_count);
 			}
 
@@ -587,7 +603,7 @@ impl Reactor {
 		game.common.thoughts[target].old_inferred = Some(game.common.thoughts[target].inferred);
 		game.common.thoughts[target].inferred = new_inferred;
 
-		if game.meta[target].reasoning.last().map(|r| *r != game.state.turn_count).unwrap_or(true) {
+		if game.meta[target].reasoning.last().is_none_or(|r| *r != game.state.turn_count) {
 			game.meta[target].reasoning.push(game.state.turn_count);
 		}
 
@@ -599,9 +615,9 @@ impl Reactor {
 			let interp = if stable {
 				if game.common.order_kt(&game.frame(), target) {
 					Some(ClueInterp::Stall)
-				}
-				else if *giver == game.state.our_player_index {
-					Some(ClueInterp::Illegal)
+				// }
+				// else if *giver == game.state.our_player_index {
+				// 	Some(ClueInterp::Illegal)
 				} else {
 					None
 				}
@@ -615,6 +631,7 @@ impl Reactor {
 		let meta = &mut game.meta[target];
 
 		meta.status = CardStatus::CalledToPlay;
+		meta.by = Some(*giver);
 		meta.focused = true;
 		if urgent {
 			meta.urgent = true;
@@ -625,7 +642,7 @@ impl Reactor {
 	}
 
 	fn target_discard(game: &mut Game, action: &ClueAction, target: usize, urgent: bool) {
-		let ClueAction { target: clue_target, .. } = action;
+		let ClueAction { giver, target: clue_target, .. } = action;
 
 		let mut inferred = mem::take(&mut game.common.thoughts[target].inferred);
 		inferred.retain(|i| !game.state.is_critical(i));
@@ -635,11 +652,12 @@ impl Reactor {
 		let meta = &mut game.meta[target];
 
 		meta.status = CardStatus::CalledToDiscard;
-		meta.trash = true;
+		meta.by = Some(*giver);
+		meta.focused = true;
 		if urgent {
 			meta.urgent = true;
 		}
-		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+		if meta.reasoning.last().is_none_or(|r| *r != state.turn_count) {
 			meta.reasoning.push(state.turn_count);
 		}
 
@@ -671,7 +689,8 @@ impl Reactor {
 
 				if !state.deck[order].clued && meta.status == CardStatus::None {
 					meta.status = CardStatus::ChopMoved;
-					if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+					meta.by = Some(*giver);
+					if meta.reasoning.last().is_none_or(|r| *r != state.turn_count) {
 						meta.reasoning.push(state.turn_count);
 					}
 				}
@@ -686,8 +705,9 @@ impl Reactor {
 
 		let meta = &mut game.meta[hand[target_index]];
 		meta.status = CardStatus::CalledToDiscard;
-		meta.trash = true;
-		if meta.reasoning.last().map(|r| *r != state.turn_count).unwrap_or(true) {
+		meta.by = Some(*giver);
+		// meta.trash = true;
+		if meta.reasoning.last().is_none_or(|r| *r != state.turn_count) {
 			meta.reasoning.push(state.turn_count);
 		}
 		Some(ClueInterp::RefDiscard)

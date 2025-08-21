@@ -579,9 +579,17 @@ impl EndgameSolver {
 		let mut drawn = Vec::new();
 		assert_eq!(remaining.values().map(|r| r.missing).sum::<usize>(), state.cards_left);
 
+		let all_trash = remaining.iter().all(|(id, _)| state.is_basic_trash(*id));
+
 		for (id, RemainingEntry { missing, .. }) in remaining {
 			let new_remaining = remove_remaining(remaining, *id);
 			drawn.push(GameArr { prob: Frac::new(*missing as u64, state.cards_left as u64), remaining: new_remaining, drew: Some(*id) });
+
+			if all_trash {
+				info!("short-circuiting all remaining trash!");
+				drawn[0].prob = Frac::ONE;
+				break;
+			}
 		}
 
 		if drawn.is_empty() {

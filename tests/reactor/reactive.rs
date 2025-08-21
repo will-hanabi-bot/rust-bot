@@ -107,7 +107,10 @@ fn it_understands_a_reactive_dc_play() {
 		&["xx", "xx", "xx", "xx", "xx"],
 		&["r3", "g2", "r2", "r3", "g5"],
 		&["g1", "b5", "p2", "b1", "g4"],
-	], TestOptions::default());
+	], TestOptions {
+		clue_tokens: 7,
+		..TestOptions::default()
+	});
 
 	take_turn(&mut game, "Alice clues blue to Cathy");
 
@@ -129,6 +132,7 @@ fn it_elims_a_reactive_dc_play() {
 		&["b3", "b5", "p2", "b1", "g4"],
 	], TestOptions {
 		play_stacks: Some(&[1, 1, 1, 0, 0]),
+		clue_tokens: 7,
 		init: Box::new(|game| {
 			// Bob's r2 is clued with red.
 			pre_clue(game, Player::Bob, 3, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Alice }]);
@@ -183,6 +187,7 @@ fn it_doesnt_play_target_an_unclued_dupe() {
 	], TestOptions {
 		starting: Player::Cathy,
 		play_stacks: Some(&[2, 0, 1, 0, 0]),
+		clue_tokens: 7,
 		init: Box::new(|game| {
 			// Bob's r3 in slot 4 is clued.
 			pre_clue(game, Player::Bob, 4, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Alice }]);

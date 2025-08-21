@@ -27,7 +27,7 @@ pub struct State {
 	pub card_order: usize,
 	pub cards_left: usize,
 	pub play_stacks: Vec<usize>,
-	pub discard_stacks: Vec<Vec<usize>>,
+	pub discard_stacks: Vec<Vec<Vec<usize>>>,
 	pub max_ranks: Vec<usize>,
 	pub action_list: Arc<Vec<Vec<Action>>>,
 	pub current_player_index: usize,
@@ -69,7 +69,7 @@ impl State {
 			cards_left,
 			card_count,
 			play_stacks: vec![0; num_suits],
-			discard_stacks: vec![vec![0; 5]; num_suits],
+			discard_stacks: vec![vec![Vec::new(); 5]; num_suits],
 			max_ranks: vec![5; num_suits],
 			action_list: Arc::new(Vec::new()),
 			current_player_index: 0,
@@ -165,7 +165,7 @@ impl State {
 	}
 
 	pub fn is_critical(&self, id: Identity) -> bool {
-		!self.is_basic_trash(id) && self.discard_stacks[id.suit_index][id.rank - 1] == (self.card_count(id) - 1)
+		!self.is_basic_trash(id) && self.discard_stacks[id.suit_index][id.rank - 1].len() == (self.card_count(id) - 1)
 	}
 
 	pub fn our_hand(&self) -> &Vec<usize> {
@@ -179,7 +179,7 @@ impl State {
 	/** Returns the number of cards matching an identity on the play+discard stacks.  */
 	pub fn base_count(&self, id: Identity) -> usize {
 		(if self.play_stacks[id.suit_index] >= id.rank { 1 } else { 0 }) +
-		self.discard_stacks[id.suit_index][id.rank - 1]
+		self.discard_stacks[id.suit_index][id.rank - 1].len()
 	}
 
 	pub fn all_valid_clues(&self, target: usize) -> Vec<Clue> {
@@ -227,8 +227,8 @@ impl State {
 		self.card_count[id.to_ord()]
 	}
 
-	pub fn holder_of(&self, order: usize) -> Option<usize> {
-		self.hands.iter().position(|hand| hand.contains(&order))
+	pub fn holder_of(&self, order: usize) -> usize {
+		self.hands.iter().position(|hand| hand.contains(&order)).unwrap_or_else(|| panic!("Tried to get holder of {order}, hands were {:?}!", self.hands))
 	}
 
 	pub fn expand_short(&self, short: &str) -> Identity {

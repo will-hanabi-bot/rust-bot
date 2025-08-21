@@ -205,25 +205,26 @@ impl Player {
 	}
 
 	pub fn good_touch_elim(&mut self, frame: &Frame) -> Vec<usize> {
+		let Frame { state, meta } = frame;
 		let mut elim_candidates = Vec::new();
 		let mut resets = Vec::new();
 
-		for i in 0..frame.state.num_players {
-			for &order in &frame.state.hands[i] {
+		for i in 0..state.num_players {
+			for &order in &state.hands[i] {
 				let thought = &self.thoughts[order];
 
-				if frame.meta[order].trash || thought.reset ||  thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
+				if meta[order].trash || thought.reset ||  thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
 					continue;
 				}
 
-				if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !frame.state.is_basic_trash(i)) && frame.is_touched(order) {
+				if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !state.is_basic_trash(i)) && frame.is_touched(order) {
 					elim_candidates.push(order);
 				}
 			}
 		}
 
-		let mut all_ids = IdentitySet::from_iter(all_ids(&frame.state.variant));
-		let trash_ids: IdentitySet = all_ids.filter(|i| frame.state.is_basic_trash(i));
+		let mut all_ids = IdentitySet::from_iter(all_ids(&state.variant));
+		let trash_ids: IdentitySet = all_ids.filter(|i| state.is_basic_trash(i));
 		all_ids.retain(|i| !trash_ids.contains(i));
 
 		// Remove all trash identities
@@ -257,7 +258,7 @@ impl Player {
 
 				if good_touch {
 					let mut inferred = thought.inferred;
-					inferred.retain(|i| !self.is_trash(frame, i, 999));
+					inferred.retain(|i| !self.is_trash(frame, i, *order));
 					self.thoughts[*order].inferred = inferred;
 				}
 			}
@@ -270,10 +271,13 @@ impl Player {
 			Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => orders
 		}).cloned().collect();
 
-		let orders = if self.is_common { &state.hands.concat() } else { &state.hands[self.player_index] };
+		let orders = &state.hands.concat();
 		let linkable_orders = orders.iter().filter(|o| {
 			let thought = &self.thoughts[**o];
-			thought.id().is_none() && (0..=3).contains(&thought.inferred.len()) && !thought.inferred.iter().all(|i| state.is_basic_trash(i))
+
+			thought.identity(&IdOptions { infer: false, symmetric: true }).is_none() &&
+				(0..=3).contains(&thought.inferred.len()) &&
+				!thought.inferred.iter().all(|i| state.is_basic_trash(i))
 		}).collect::<Vec<_>>();
 
 		for &&order in &linkable_orders {

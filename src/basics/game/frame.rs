@@ -25,6 +25,10 @@ impl<'a> Frame<'a> {
 	}
 
 	pub fn get_note(&self, common: &Player, order: usize) -> String {
+		if self.meta[order].trash {
+			return "kt".to_string();
+		}
+
 		let thought = &common.thoughts[order];
 
 		let note = if thought.inferred.is_empty() {

@@ -9,7 +9,7 @@ use super::state::State;
 use std::collections::{HashSet};
 use ahash::AHashSet;
 use itertools::Itertools;
-use log::{warn};
+use log::warn;
 
 mod elim;
 
@@ -97,20 +97,21 @@ impl Player {
 		hand[target_index]
 	}
 
-	/** Returns whether the identity has already been sieved in someone's hand, excluding the given order. */
+	/** Returns whether the identity has already been sieved in anyone's hand, excluding the given order. */
 	pub fn is_sieved(&self, frame: &Frame, id: Identity, order: usize) -> bool {
 		let Frame { state, meta } = frame;
 		for player_index in 0..state.num_players {
 			let loaded = self.thinks_loaded(frame, player_index);
+			let chop = state.hands[player_index].iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None);
 
-			for (i, o) in state.hands[player_index].iter().enumerate() {
+			for o in state.hands[player_index].iter() {
 				if *o != order && self.thoughts[*o].matches(&id, &MatchOptions { infer: true, ..Default::default() }) {
 					if loaded {
 						if meta[*o].status != CardStatus::CalledToDiscard  {
 							return true;
 						}
 					}
-					else if i != 0 {
+					else if chop.is_none_or(|c| o != c) {
 						return true;
 					}
 				}
@@ -127,14 +128,14 @@ impl Player {
 		})
 	}
 
-	/** Returns whether the identity has already been touched in someone's hand, excluding the given order. */
-	pub fn is_saved(&self, frame: &Frame, id: Identity, order: usize) -> bool {
+	/** Returns whether the identity is duplicated in that person's hand. */
+	pub fn is_duped(&self, frame: &Frame, id: Identity, order: usize) -> bool {
 		let Frame { state, .. } = frame;
+		let holder = state.holder_of(order);
 
-		state.hands.concat().iter().any(|&o|
+		state.hands[holder].iter().any(|&o|
 			o != order &&
 			self.thoughts[o].matches(&id, &MatchOptions { infer: true, ..Default::default() }) &&
-			frame.is_touched(o) &&
 			// Not sharing a link
 			!self.links.iter().any(|l| match l {
 				Link::Promised { orders, id: promise, .. } => {
@@ -147,16 +148,21 @@ impl Player {
 		)
 	}
 
-	/** Returns whether the identity is trash (either basic trash or already saved). */
+	/** Returns whether the identity is trash (either basic trash or duped in the same hand). */
 	pub fn is_trash(&self, frame: &Frame, id: Identity, order: usize) -> bool {
-		frame.state.is_basic_trash(id) || self.is_saved(frame, id, order)
+		frame.state.is_basic_trash(id) || self.is_duped(frame, id, order)
 	}
 
 	/** Returns whether the order is trash (either basic trash or already saved). */
 	pub fn order_trash(&self, frame: &Frame, order: usize) -> bool {
 		let ConvData { status, trash, .. } = &frame.meta[order];
+		let thought = &self.thoughts[order];
 
-		if self.thoughts[order].possible.iter().all(|id| self.is_trash(frame, id, order)) {
+		if thought.possible.iter().all(|i| frame.state.is_critical(i)) {
+			return false;
+		}
+
+		if thought.possible.iter().all(|id| self.is_trash(frame, id, order)) {
 			return true;
 		}
 
@@ -164,7 +170,7 @@ impl Player {
 			return true;
 		}
 
-		self.thoughts[order].possibilities().iter().all(|id| self.is_trash(frame, id, order))
+		thought.possibilities().iter().all(|id| self.is_trash(frame, id, order))
 	}
 
 	/** Returns whether the order is globally known trash (either basic trash or already saved). */
@@ -180,7 +186,9 @@ impl Player {
 		if frame.meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
 			return true;
 		}
-		(if frame.meta[order].focused { self.thoughts[order].possibilities() } else { self.thoughts[order].possible }).iter().all(|id| frame.state.is_playable(id))
+
+		let poss = if frame.meta[order].focused { self.thoughts[order].possibilities() } else { self.thoughts[order].possible };
+		poss.iter().all(|id| frame.state.is_playable(id))
 	}
 
 	pub fn thinks_locked(&self, frame: &Frame, player_index: usize) -> bool {
@@ -211,11 +219,18 @@ impl Player {
 		let Frame { state, meta } = frame;
 
 		state.hands[player_index].iter().filter_map(|&order| {
-			if meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
+			let thought = &self.thoughts[order];
+
+			let known_playable = thought.possible.iter().all(|id| state.is_playable(id)) ||
+				(meta[order].status == CardStatus::CalledToPlay && thought.possible.iter().any(|id| frame.state.is_playable(id)));
+
+			if known_playable {
 				return Some(order);
 			}
 
-			let thought = &self.thoughts[order];
+			if meta[order].trash {
+				return None;
+			}
 
 			for link in &self.links {
 				match link {
@@ -234,6 +249,12 @@ impl Player {
 
 	pub fn thinks_trash(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
 		frame.state.hands[player_index].iter().filter(|&order| self.order_trash(frame, *order)).copied().collect()
+	}
+
+	pub fn discardable(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
+		frame.state.hands[player_index].iter().filter(|&&order|
+			self.order_trash(frame, order) || self.thoughts[order].possibilities().iter().all(|id| self.is_sieved(frame, id, order))
+		).copied().collect()
 	}
 
 	pub fn safe_actions(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
@@ -346,7 +367,7 @@ impl Player {
 					}
 
 					let thought = &self.thoughts[order];
-					let id = thought.identity(&IdOptions { infer: true, symmetric: self.player_index == player_index });
+					let id = thought.identity(&IdOptions { infer: true, symmetric: true });
 					let actual_id: Option<Identity> = state.deck[order].id();
 
 					if !frame.is_touched(order) || actual_id.is_some_and(|i| good_touch_elim.contains(i)) {
