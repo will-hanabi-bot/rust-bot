@@ -92,7 +92,7 @@ impl EndgameSolver {
 			if must_start_endgame.len() == 1 {
 				let target = must_start_endgame[0];
 
-				if player_turn != target && players_upto(state.num_players, player_turn, target).len() > state.clue_tokens {
+				if player_turn != target && Frac::from(players_upto(state.num_players, player_turn, target).len()) > state.clue_tokens {
 					// println!("{} needs to start endgame, not enough clues to reach their turn", state.player_names[target]);
 					return true;
 				}
@@ -189,7 +189,7 @@ impl EndgameSolver {
 			}
 		}
 
-		if state.clue_tokens > 0 {
+		if state.can_clue() {
 			let action = PerformAction::Rank { target: 0, value: 0 };
 			let new_state = EndgameSolver::advance_state(state, &action, player_turn, None);
 
@@ -244,7 +244,7 @@ impl EndgameSolver {
 			}
 		}
 
-		if state.clue_tokens > 0 {
+		if state.can_clue() {
 			possible_actions.push(PerformAction::Rank { target: 0, value: 0 });
 		}
 
@@ -315,28 +315,28 @@ impl EndgameSolver {
 		let mut new_state = state.clone();
 		new_state.turn_count += 1;
 
-		let remove_and_draw_new = |player_index: usize, order: usize| {
+		let remove_and_draw_new = |s: &mut State, player_index: usize, order: usize| {
 			let new_card_order = state.card_order;
-			new_state.hands[player_index].retain(|&o| o != order);
-			new_state.hands[player_index].insert(0, state.card_order);
+			s.hands[player_index].retain(|&o| o != order);
+			s.hands[player_index].insert(0, state.card_order);
 
 			match state.endgame_turns {
-				Some(endgame_turns) => new_state.endgame_turns = Some(endgame_turns - 1),
+				Some(endgame_turns) => s.endgame_turns = Some(endgame_turns - 1),
 				None => {
-					new_state.card_order += 1;
-					new_state.cards_left -= 1;
+					s.card_order += 1;
+					s.cards_left -= 1;
 
-					if new_state.cards_left == 0 {
-						new_state.endgame_turns = Some(state.num_players);
+					if s.cards_left == 0 {
+						s.endgame_turns = Some(state.num_players);
 					}
 				}
 			}
 
 			if state.deck.get(new_card_order).and_then(|card| card.base).is_none() {
 				let new_card = draw.unwrap_or_else(|| Card::new(None, new_card_order, state.turn_count));
-				match new_state.deck.get_mut(new_card_order) {
+				match s.deck.get_mut(new_card_order) {
 					Some(card) => *card = new_card,
-					None => new_state.deck.push(new_card)
+					None => s.deck.push(new_card)
 				}
 			}
 		};
@@ -350,7 +350,7 @@ impl EndgameSolver {
 							new_state.play_stacks[id.suit_index] = id.rank;
 
 							if id.rank == 5 {
-								new_state.clue_tokens = std::cmp::min(state.clue_tokens + 1, 8);
+								new_state.regain_clue();
 							}
 						}
 						else {
@@ -359,15 +359,15 @@ impl EndgameSolver {
 						}
 					}
 				}
-				remove_and_draw_new(player_index, *target);
+				remove_and_draw_new(&mut new_state, player_index, *target);
 			}
 			PerformAction::Discard { target, .. } => {
 				if let Some(id) = state.deck[*target].id() {
 					new_state.discard_stacks[id.suit_index][id.rank - 1].push(*target);
 				}
 
-				new_state.clue_tokens = std::cmp::min(state.clue_tokens + 1, 8);
-				remove_and_draw_new(player_index, *target);
+				new_state.regain_clue();
+				remove_and_draw_new(&mut new_state, player_index, *target);
 			}
 			PerformAction::Colour { .. } | PerformAction::Rank {.. } => {
 				new_state.clue_tokens -= 1;

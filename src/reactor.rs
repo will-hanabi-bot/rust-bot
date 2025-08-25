@@ -1,5 +1,6 @@
 use core::f32;
 use colored::Colorize;
+use fraction::Fraction;
 use log::{info, warn};
 use serde::Deserialize;
 
@@ -72,7 +73,7 @@ impl Convention for Reactor {
 				Reactor::interpret_stable(prev, game, action, false)
 			}
 		}
-		else if prev.common.thinks_locked(&prev.frame(), *giver) || game.state.in_endgame() || prev.state.clue_tokens == 8 {
+		else if prev.common.thinks_locked(&prev.frame(), *giver) || game.state.in_endgame() || prev.state.clue_tokens == Fraction::from(8) {
 			Reactor::interpret_stable(prev, game, action, true)
 		}
 		else {
@@ -230,7 +231,7 @@ impl Convention for Reactor {
 		info!("playables {playable_orders:?}");
 		info!("discardable {discard_orders:?}");
 
-		let all_clues = if state.clue_tokens == 0 || common.waiting.as_ref().is_some_and(|w| w.receiver == state.our_player_index) { Vec::new() } else {
+		let all_clues = if !state.can_clue() || common.waiting.as_ref().is_some_and(|w| w.receiver == state.our_player_index) { Vec::new() } else {
 			(1..state.num_players).flat_map(|offset| {
 				let target = (state.our_player_index + offset) % state.num_players;
 				state.all_valid_clues(target)
@@ -255,7 +256,7 @@ impl Convention for Reactor {
 		}).collect::<Vec<_>>();
 		let num_plays = all_plays.len();
 
-		let cant_discard = state.clue_tokens == 8 ||
+		let cant_discard = state.clue_tokens == Fraction::from(8) ||
 			(state.pace() == 0 && (num_clues > 0 || num_plays > 0)) ||
 			(num_plays > 0 && game.common.waiting.as_ref().is_some_and(|w| w.reacter == state.next_player_index(state.our_player_index)));	// If we have a play and there's a potential inversion
 		info!("can discard: {}", !cant_discard);
@@ -277,7 +278,7 @@ impl Convention for Reactor {
 
 		let mut all_actions = all_clues.into_iter().chain(all_plays).chain(all_discards).collect::<Vec<_>>();
 
-		if !cant_discard && (state.clue_tokens == 0 || num_plays == 0) && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
+		if !cant_discard && (!state.can_clue() || num_plays == 0) && num_discards == 0 && !me.thinks_locked(&frame, state.our_player_index) {
 			if let Some(chop) = Reactor::chop(game, state.our_player_index) {
 				all_actions.push((
 					PerformAction::Discard { target: *chop },

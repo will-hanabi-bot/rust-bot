@@ -6,23 +6,49 @@ use super::card::{Identity, Identifiable};
 use super::clue::{BaseClue, ClueKind};
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct JSONVariant {
-	pub id: u32,
-	pub name: String,
-	pub suits: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Variant {
 	pub id: u32,
 	pub name: String,
 	pub suits: Vec<String>,
-	pub colourable_suits: Vec<String>,
-	pub short_forms: Vec<String>,
+
+	#[serde(rename="criticalRank")]
+	pub critical_rank: Option<usize>,
+	#[serde(rename="clueStarved")]
+	pub clue_starved: Option<bool>,
+	#[serde(rename="specialRank")]
+	pub special_rank: Option<usize>,
+	#[serde(rename="specialRankAllClueColors")]
+	pub rainbow_s: Option<bool>,
+	#[serde(rename="specialRankNoClueColors")]
+	pub white_s: Option<bool>,
+	#[serde(rename="specialRankAllClueRanks")]
+	pub pink_s: Option<bool>,
+	#[serde(rename="specialRankNoClueRanks")]
+	pub brown_s: Option<bool>,
+	#[serde(rename="specialRankDeceptive")]
+	pub deceptive_s: Option<bool>,
+
+	pub short_forms: Option<Vec<String>>,
+	pub colourable_suits: Option<Vec<String>>,
+}
+
+#[derive(Default)]
+pub struct VariantOpts {
+	pub critical_rank: Option<usize>,
+	pub clue_starved: Option<bool>,
+	pub special_rank: Option<usize>,
+	pub rainbow_s: Option<bool>,
+	pub white_s: Option<bool>,
+	pub pink_s: Option<bool>,
+	pub brown_s: Option<bool>,
+	pub deceptive_s: Option<bool>,
 }
 
 impl Variant {
-	pub fn new(id: u32, name: &str, suit_strs: &[&str], short_strs: &[&str]) -> Self {
+	pub fn new(id: u32, name: &str, suit_strs: &[&str], short_strs: &[&str], opts: VariantOpts) -> Self {
+		let VariantOpts { critical_rank, clue_starved, special_rank, rainbow_s, white_s, pink_s, brown_s, deceptive_s } = opts;
+
 		let mut suits = Vec::new();
 		let mut short_forms = Vec::new();
 		let mut colourable_suits = Vec::new();
@@ -42,8 +68,16 @@ impl Variant {
 			id,
 			name: name.to_string(),
 			suits,
-			colourable_suits,
-			short_forms
+			colourable_suits: Some(colourable_suits),
+			short_forms: Some(short_forms),
+			critical_rank,
+			clue_starved,
+			special_rank,
+			rainbow_s,
+			white_s,
+			pink_s,
+			brown_s,
+			deceptive_s
 		}
 	}
 }
@@ -55,7 +89,7 @@ pub struct Suit {
 }
 
 pub struct VariantManager {
-	variants: Vec<JSONVariant>,
+	variants: Vec<Variant>,
 	colours: Vec<Suit>,
 }
 
@@ -74,11 +108,15 @@ impl VariantManager {
 		Self { variants, colours }
 	}
 
-	pub fn get_variant(&self, name: &str) -> Variant {
-		let JSONVariant { id, name, suits } = self.variants.iter().find(|variant| variant.name == name).unwrap_or_else(|| panic!("Variant '{name}' not found")).clone();
+	pub fn get_variant(&mut self, name: &str) -> Variant {
+		let mut var = self.variants.iter_mut().find(|variant| variant.name == name).unwrap_or_else(|| panic!("Variant '{name}' not found")).clone();
+
+		if var.short_forms.is_some() {
+			return var;
+		}
 
 		let mut short_forms: Vec<String> = Vec::new();
-		for suit in &suits {
+		for suit in &var.suits {
 			let short = match suit.as_str() {
 				"Black" => "k".to_string(),
 				"Pink" => "i".to_string(),
@@ -90,7 +128,7 @@ impl VariantManager {
 							abbreviation.clone()
 						} else {
 							// Look for the first unused character
-							suit.to_lowercase().split("").find(|c| !short_forms.contains(&c.to_string())).unwrap_or_else(|| panic!("No unused character found for suit '{suit}' in {suits:?}")).to_string()
+							suit.to_lowercase().split("").find(|c| !short_forms.contains(&c.to_string())).unwrap_or_else(|| panic!("No unused character found for suit '{suit}' in {:?}", var.suits)).to_string()
 						}
 					} else {
 						panic!("Colour '{suit}' not found");
@@ -100,9 +138,11 @@ impl VariantManager {
 			short_forms.push(short);
 		}
 
-		let colourable_suits = suits.iter().filter(|suit| !NO_COLOUR.is_match(suit)).map(|suit| suit.to_string()).collect();
+		let colourable_suits = var.suits.iter().filter(|suit| !NO_COLOUR.is_match(suit)).map(|suit| suit.to_string()).collect();
 
-		Variant { id, name, suits, colourable_suits, short_forms }
+		var.short_forms = Some(short_forms);
+		var.colourable_suits = Some(colourable_suits);
+		var
 	}
 }
 
@@ -142,15 +182,36 @@ pub fn id_touched(id: Identity, variant: &Variant, clue: &BaseClue) -> bool {
 			return true;
 		}
 
-		if PRISM.is_match(suit) {
-			return ((rank - 1) % variant.colourable_suits.len()) == *value;
+		if variant.special_rank.is_some_and(|r| r == rank) {
+			if variant.rainbow_s.is_some_and(|c| c) {
+				return true;
+			}
+			else if variant.white_s.is_some_and(|c| c) {
+				return false;
+			}
 		}
 
-		variant.suits[suit_index] == variant.colourable_suits[*value]
+		if PRISM.is_match(suit) {
+			return ((rank - 1) % variant.colourable_suits.as_ref().unwrap().len()) == *value;
+		}
+
+		variant.suits[suit_index] == variant.colourable_suits.as_ref().unwrap()[*value]
 	}
 	else {
 		if BROWNISH.is_match(suit) {
 			return false;
+		}
+
+		if variant.special_rank.is_some_and(|r| r == rank) {
+			if variant.pink_s.is_some_and(|c| c) {
+				return rank != *value;
+			}
+			else if variant.brown_s.is_some_and(|c| c) {
+				return false;
+			}
+			else if variant.deceptive_s.is_some_and(|c| c) {
+				return (suit_index % 4) + (if variant.special_rank.unwrap() == 1 { 2 } else { 1 }) == *value;
+			}
 		}
 
 		if PINKISH.is_match(suit) {
@@ -170,7 +231,7 @@ pub fn card_touched(card: &impl Identifiable, variant: &Variant, clue: &BaseClue
 
 pub fn card_count(variant: &Variant, identity: Identity) -> usize {
 	let Identity { suit_index, rank } = identity;
-	if DARK.is_match(&variant.suits[suit_index]) {
+	if DARK.is_match(&variant.suits[suit_index]) || variant.critical_rank.is_some_and(|r| r == rank) {
 		1
 	}
 	else {

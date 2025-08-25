@@ -1,4 +1,5 @@
 use colored::Colorize;
+use fraction::{ConstZero, Fraction};
 use log::{info, warn};
 
 use crate::basics::game::SimOpts;
@@ -27,7 +28,9 @@ impl Reactor {
 		let new_playables = state.hands.concat().iter().filter(|&o| meta[*o].status != CardStatus::CalledToPlay &&
 			hypo.meta[*o].status == CardStatus::CalledToPlay).copied().collect::<Vec<_>>();
 
-		let bad_playable = new_playables.iter().find(|&o| !hypo.me().hypo_plays.contains(o)).copied();
+		let bad_playable = new_playables.iter().find(|&o|
+			!(hypo.me().hypo_plays.contains(o) || (state.in_endgame() && state.deck[*o].id().is_some_and(|i| state.is_playable(i))))
+		).copied();
 
 		if let Some(bad_playable) = bad_playable {
 			warn!("clue {} results in {} {} looking playable!", clue.fmt(state, *target), state.log_iden(&state.deck[bad_playable]), bad_playable);
@@ -40,7 +43,7 @@ impl Reactor {
 		}
 
 		if let Some(Interp::Reactor(ReactorInterp::Clue(last_move))) = &hypo.last_move {
-			if (last_move == &ClueInterp::RefPlay || last_move == &ClueInterp::Reclue) && playables.is_empty() {
+			if (last_move == &ClueInterp::RefPlay || last_move == &ClueInterp::Reclue) && playables.is_empty() && !state.in_endgame() {
 				warn!("clue {} looks like {:?} but gets no playables!", clue.fmt(state, *target), last_move);
 				return -100.0;
 			}
@@ -145,7 +148,7 @@ impl Reactor {
 		}
 
 		if game.players[player_index].thinks_locked(&frame, player_index) {
-			return if state.clue_tokens == 0 {
+			return if !state.can_clue() {
 				let locked_dc = game.players[player_index].locked_discard(state, player_index);
 				let id = state.deck[locked_dc].id().unwrap();
 				let action = Action::discard(player_index, locked_dc, id.suit_index as i32, id.rank as i32, false);
@@ -159,7 +162,7 @@ impl Reactor {
 			}
 		}
 
-		if state.clue_tokens == 8 {
+		if state.clue_tokens == Fraction::from(8) {
 			let mut next_game = game.simulate_clean();
 			next_game.state.clue_tokens -= 1;
 			info!("forced clue at 8 clues!");
@@ -173,7 +176,7 @@ impl Reactor {
 			let id = state.deck[*chop].id().unwrap();
 
 			// Assume Alice will clue Bob
-			if state.clue_tokens > 0 && (state.is_critical(id) || state.is_playable(id)) {
+			if state.can_clue() && (state.is_critical(id) || state.is_playable(id)) {
 				let mut next_game = game.simulate_clean();
 				next_game.state.clue_tokens -= 1;
 				return Reactor::eval_game(&next_game);
@@ -189,7 +192,7 @@ impl Reactor {
 					let action = Action::discard(player_index, *chop, id.suit_index as i32, id.rank as i32, false);
 					let dc_game = Reactor::advance_game(game, &action);
 
-					if state.clue_tokens > 2 {
+					if state.clue_tokens > Fraction::from(2) {
 						let mut clue_game = game.simulate_clean();
 						clue_game.state.clue_tokens -= 1;
 
@@ -271,12 +274,16 @@ impl Reactor {
 		let mut score_val = std::cmp::min(state.score(), 2 * state.variant.suits.len()) as f32;
 		score_val += state.score() as f32;
 
-		let clue_val = match state.clue_tokens {
-			0 => -0.5,
-			1..=6 => state.clue_tokens as f32 / 2.0,
-			7 => 3.25,
-			8 => 3.5,
-			_ => panic!("unnatural number of clue tokens! {}", state.clue_tokens)
+		let clues: f32 = state.clue_tokens.try_into().unwrap();
+
+		let clue_val = if state.clue_tokens == Fraction::ZERO {
+			-0.5
+		} else if !state.can_clue() {
+			-0.25
+		} else if clues > 6.0 {
+			3.0 + (clues - 6.0) * 0.25
+		} else {
+			clues / 2.0
 		};
 
 		let score_loss = state.variant.suits.len() * 5 - state.max_score();

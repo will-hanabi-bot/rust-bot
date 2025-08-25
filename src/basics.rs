@@ -95,7 +95,7 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 		state.strikes += 1;
 	}
 	else {
-		state.clue_tokens = min(state.clue_tokens + 1, 8);
+		state.regain_clue();
 	}
 }
 
@@ -176,8 +176,8 @@ pub fn on_play(game: &mut Game, action: &PlayAction) {
 
 	state.endgame_turns = state.endgame_turns.map(|turns| turns - 1);
 
-	if rank == 5 && state.clue_tokens < 8 {
-		state.clue_tokens += 1;
+	if rank == 5 {
+		state.regain_clue();
 	}
 }
 

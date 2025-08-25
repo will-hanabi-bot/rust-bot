@@ -1,3 +1,4 @@
+use fraction::Fraction;
 use rust_bot::basics::action::{Action, ClueAction, PerformAction};
 use rust_bot::basics::card::CardStatus;
 use rust_bot::basics::clue::BaseClue;
@@ -97,7 +98,7 @@ fn it_understands_a_reverse_reactive_clue() {
 		&["b1", "r1", "r4", "y4", "y4"],
 		&["g4", "g1", "g4", "b4", "b4"],
 	], TestOptions {
-		clue_tokens: 7,
+		clue_tokens: Fraction::from(7),
 		// Bob's slot 2 is clued with 1.
 		init: Box::new(|game: &mut Game| {
 			pre_clue(game, Player::Bob, 2, &[TestClue { kind: ClueKind::RANK, value: 1, giver: Player::Alice }]);
@@ -275,7 +276,7 @@ fn it_understands_bob_wont_react_if_alternative_is_on_them() {
 		init: Box::new(|game: &mut Game| {
 			pre_clue(game, Player::Cathy, 3, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Green as usize, giver: Player::Alice }]);
 		}),
-		clue_tokens: 8,
+		clue_tokens: Fraction::from(8),
 		..TestOptions::default()
 	});
 

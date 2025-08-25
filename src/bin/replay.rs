@@ -89,7 +89,7 @@ async fn main() {
 		panic!("Replay only has {} players!", players.len());
 	}
 
-	let variant_manager = VariantManager::new().await;
+	let mut variant_manager = VariantManager::new().await;
 	let variant = variant_manager.get_variant(&options.map(|opts| opts.variant).unwrap_or("No Variant".to_string()));
 
 	let (debug_sender, mut debug_receiver) = mpsc::unbounded_channel::<DebugCommand>();

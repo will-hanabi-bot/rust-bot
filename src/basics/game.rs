@@ -219,7 +219,7 @@ impl Game {
 		let mut hypo_game = self.simulate_clean();
 
 		if options.free {
-			hypo_game.state.clue_tokens += 1;
+			hypo_game.state.regain_clue();
 		}
 		if options.no_recurse {
 			hypo_game.no_recurse = true;

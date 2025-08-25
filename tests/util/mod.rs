@@ -1,5 +1,6 @@
 use std::collections::{HashMap};
 
+use fraction::{ConstOne, Fraction};
 use rust_bot::basics;
 use rust_bot::basics::action::{Action, ClueAction, DiscardAction, DrawAction, PlayAction, TurnAction};
 use rust_bot::basics::clue::{BaseClue, CardClue, ClueKind};
@@ -8,7 +9,7 @@ use rust_bot::basics::game::{Convention, Game};
 use rust_bot::basics::identity_set::IdentitySet;
 use rust_bot::basics::util::visible_find;
 use rust_bot::basics::state::State;
-use rust_bot::basics::variant::{all_ids, id_touched, Variant};
+use rust_bot::basics::variant::{all_ids, id_touched, Variant, VariantOpts};
 use std::sync::{Arc, LazyLock};
 
 pub enum Colour {
@@ -22,12 +23,12 @@ pub enum Player {
 
 static VARIANTS: LazyLock<HashMap<&str, Variant>> = LazyLock::new(|| {
     HashMap::from([
-        ("No Variant", Variant::new(0, "No Variant", &["Red", "Yellow", "Green", "Blue", "Purple"], &["r", "y", "g", "b", "p"])),
-        ("6 Suits", Variant::new(0, "6 Suits", &["Red", "Yellow", "Green", "Blue", "Purple", "Teal"], &["r", "y", "g", "b", "p", "t"])),
-        ("Rainbow (5 Suits)", Variant::new(16, "Rainbow", &["Red", "Yellow", "Green", "Blue", "Rainbow"], &["r", "y", "g", "b", "m"])),
-        ("Black (5 Suits)", Variant::new(2, "Black", &["Red", "Yellow", "Green", "Blue", "Black"], &["r", "y", "g", "b", "k"])),
-        ("Pink (5 Suits)", Variant::new(2, "Pink", &["Red", "Yellow", "Green", "Blue", "Pink"], &["r", "y", "g", "b", "i"])),
-        ("Brown (5 Suits)", Variant::new(2, "Brown", &["Red", "Yellow", "Green", "Blue", "Brown"], &["r", "y", "g", "b", "n"])),
+        ("No Variant", Variant::new(0, "No Variant", &["Red", "Yellow", "Green", "Blue", "Purple"], &["r", "y", "g", "b", "p"], VariantOpts::default())),
+        ("6 Suits", Variant::new(0, "6 Suits", &["Red", "Yellow", "Green", "Blue", "Purple", "Teal"], &["r", "y", "g", "b", "p", "t"], VariantOpts::default())),
+        ("Rainbow (5 Suits)", Variant::new(16, "Rainbow", &["Red", "Yellow", "Green", "Blue", "Rainbow"], &["r", "y", "g", "b", "m"], VariantOpts::default())),
+        ("Black (5 Suits)", Variant::new(2, "Black", &["Red", "Yellow", "Green", "Blue", "Black"], &["r", "y", "g", "b", "k"], VariantOpts::default())),
+        ("Pink (5 Suits)", Variant::new(2, "Pink", &["Red", "Yellow", "Green", "Blue", "Pink"], &["r", "y", "g", "b", "i"], VariantOpts::default())),
+        ("Brown (5 Suits)", Variant::new(2, "Brown", &["Red", "Yellow", "Green", "Blue", "Brown"], &["r", "y", "g", "b", "n"], VariantOpts::default())),
     ])
 });
 
@@ -39,7 +40,7 @@ pub struct TestOptions<'a> {
 	pub play_stacks: Option<&'a[usize]>,
 	pub discarded: &'a[&'a str],
 	pub strikes: u8,
-	pub clue_tokens: usize,
+	pub clue_tokens: Fraction,
 	pub starting: Player,
 	pub variant: &'a str,
 	pub init: Box<dyn Fn(&mut Game)>,
@@ -53,7 +54,7 @@ impl<'a> Default for TestOptions<'a> {
 			play_stacks: None,
 			discarded: &[],
 			strikes: 0,
-			clue_tokens: 8,
+			clue_tokens: Fraction::from(8),
 			starting: Player::Alice,
 			variant: "No Variant",
 			init: Box::new(|_| {}),
@@ -155,14 +156,14 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 	let (action, draw) = parse_action(state, raw_action);
 	let turn_taker = match action {
 		Action::Clue(ClueAction { giver, .. }) => {
-			if state.clue_tokens == 0 {
+			if state.clue_tokens < Fraction::ONE {
 				panic!("Tried to clue with 0 clue tokens");
 			}
 			giver
 		},
 		Action::Play(PlayAction { player_index, .. }) => player_index,
 		Action::Discard(DiscardAction { player_index, .. }) => {
-			if state.clue_tokens == 8 {
+			if state.clue_tokens == Fraction::from(8) {
 				panic!("Tried to discard with 8 clue tokens");
 			}
 			player_index

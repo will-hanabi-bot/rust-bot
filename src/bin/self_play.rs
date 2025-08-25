@@ -148,7 +148,7 @@ async fn main() {
 	let _ = logger::init();
 	log::set_max_level(LevelFilter::Error);
 
-	let variant_manager = VariantManager::new().await;
+	let mut variant_manager = VariantManager::new().await;
 	let variant = variant_manager.get_variant(&variant);
 
 	let deck = all_ids(&variant).flat_map(|i| vec![i; card_count(&variant, i)]).collect::<Vec<_>>();

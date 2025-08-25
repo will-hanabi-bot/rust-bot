@@ -189,7 +189,7 @@ impl Action {
 		match self {
 			Action::Clue(ClueAction { giver, target, clue, .. }) => {
 				let value = match clue.kind {
-					ClueKind::COLOUR => state.variant.colourable_suits[clue.value].to_lowercase(),
+					ClueKind::COLOUR => state.variant.colourable_suits.as_ref().unwrap()[clue.value].to_lowercase(),
 					ClueKind::RANK => clue.value.to_string(),
 				};
 				format!("{} clues {} to {}", state.player_names[*giver], value, state.player_names[*target])

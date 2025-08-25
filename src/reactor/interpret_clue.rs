@@ -132,7 +132,10 @@ impl Reactor {
 
 		// Fill-in or hard burn is legal only in a stalling situation
 		if newly_touched.is_empty() {
-			if !playables.is_empty() && !prev_playables.is_empty() {
+			let safe_actions = playables.into_iter().chain(common.thinks_trash(&frame, *target)).collect::<Vec<_>>();
+			let old_safe_actions = prev_playables.into_iter().chain(prev.common.thinks_trash(&frame, *target)).collect::<Vec<_>>();
+
+			if safe_actions.iter().any(|o| !old_safe_actions.contains(o)) {
 				info!("revealed a safe action!");
 				return Some(ClueInterp::Reveal);
 			}

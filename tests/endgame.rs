@@ -1,4 +1,4 @@
-use fraction::ConstOne;
+use fraction::{ConstZero,ConstOne};
 use rust_bot::basics::action::PerformAction;
 use std::sync::Arc;
 
@@ -227,7 +227,7 @@ fn it_calculates_basic_winrate_correctly() {
 			"b2", "b3", "b4",
 			"p2", "p3", "p4"
 		],	// Missing: p1, p1, r4, y4, g4, y5
-		clue_tokens: 0,
+		clue_tokens: Frac::ZERO,
 		init: Box::new(|game: &mut Game| {
 			fully_known(game, Player::Alice, 5, "r3");
 

@@ -1,3 +1,4 @@
+use fraction::Fraction;
 use rust_bot::basics::action::PerformAction;
 use rust_bot::basics::clue::ClueKind;
 use std::sync::Arc;
@@ -17,7 +18,7 @@ fn it_doesnt_discard_an_easily_winnable_endgame() {
 		&["g1", "p1", "r1", "b3", "y5"],
 		&["r3", "b2", "p3", "y3", "y4"],
 	], TestOptions {
-		clue_tokens: 4,
+		clue_tokens: Fraction::from(4),
 		play_stacks: Some(&[5, 1, 5, 5, 5]),
 		discarded: &[
 			"r1", "r2",

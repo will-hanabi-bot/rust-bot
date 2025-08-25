@@ -218,7 +218,7 @@ impl EndgameSolver {
 
 			info!("{}", format!("possible actions: {:?}", all_actions.iter().map(|(action,_)| action.fmt(e_game)).join(", ")).green());
 
-			let arrs = EndgameSolver::gen_arrs(e_game, &remaining, all_actions.iter().all(|(p,_)| p.is_clue()));
+			let arrs = EndgameSolver::gen_arrs(e_game, &remaining, all_actions.iter().all(|(p,_)| p.is_clue()), 0);
 			let best_result = self.optimize(e_game, arrs, all_actions, state.our_player_index, 0, &deadline);
 
 			if let Ok((performs, winrate)) = best_result {
@@ -338,7 +338,7 @@ impl EndgameSolver {
 			(0..depth).map(|_| "  ").join(""),
 			performs.iter().map(|(p, _)| p.fmt_obj(game, player_turn)).join(", ")).green());
 
-		let arrs = EndgameSolver::gen_arrs(game, remaining, false);
+		let arrs = EndgameSolver::gen_arrs(game, remaining, false, depth);
 		let result = self.optimize(game, arrs, performs, player_turn, depth, deadline);
 		self.simple_cache.insert(hash, result.clone());
 		result
@@ -399,7 +399,7 @@ impl EndgameSolver {
 			let too_many_clues = game.state.action_list.concat().iter().rev()
 				.take_while(|action| !matches!(action, Action::Play(_) | Action::Discard(_)))
 				.filter(|action| matches!(action, Action::Clue(_))).count() > game.state.num_players;
-			let clue_winnable = state.clue_tokens > 0 && !too_many_clues && match solver.winnable_if(state, player_turn, &default_clue, remaining, deadline) {
+			let clue_winnable = state.can_clue() && !too_many_clues && match solver.winnable_if(state, player_turn, &default_clue, remaining, deadline) {
 				SimpleResult::Unwinnable => false,
 				SimpleResult::AlwaysWinnable => true,
 				_ => panic!("Shouldn't return WinnableWithDraws enum variant from giving a clue!")
@@ -568,7 +568,7 @@ impl EndgameSolver {
 	/**
 	 * Generates a map of game arrangements for the possible actions.
 	 */
-	fn gen_arrs(game: &Game, remaining: &RemainingMap, clue_only: bool) -> (Vec<GameArr>, Vec<GameArr>) {
+	fn gen_arrs(game: &Game, remaining: &RemainingMap, clue_only: bool, depth: usize) -> (Vec<GameArr>, Vec<GameArr>) {
 		let Game { state, .. } = game;
 		let default_arr = GameArr { prob: Frac::ONE, remaining: remaining.clone(), drew: None };
 
@@ -586,7 +586,7 @@ impl EndgameSolver {
 			drawn.push(GameArr { prob: Frac::new(*missing as u64, state.cards_left as u64), remaining: new_remaining, drew: Some(*id) });
 
 			if all_trash {
-				info!("short-circuiting all remaining trash!");
+				info!("{}short-circuiting all remaining trash!", (0..depth).map(|_| "  ").join(""),);
 				drawn[0].prob = Frac::ONE;
 				break;
 			}
