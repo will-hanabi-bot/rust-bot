@@ -28,8 +28,8 @@ fn it_doesnt_react_to_a_cathy_play() {
 
 	take_turn(&mut game, "Alice clues blue to Cathy");
 
-	// Bob's slot 3 should not called to discard, as this is an allowable play clue on turn 1.
-	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][2]].status, CardStatus::None);
+	// Bob's slot 1 should not called to discard, as this is an allowable play clue on turn 1.
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::None);
 }
 
 #[test]

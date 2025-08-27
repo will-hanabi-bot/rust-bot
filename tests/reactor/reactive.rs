@@ -68,6 +68,29 @@ fn it_receives_a_reactive_play_play() {
 }
 
 #[test]
+fn it_reacts_to_a_reverse_reactive_play_play() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "b2", "r2", "r3", "g5"],
+		&["g1", "b5", "p2", "g2", "g4"],
+	], TestOptions {
+		starting: Player::Cathy,
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues red to Bob");
+	take_turn(&mut game, "Alice discards r3 (slot 2)");		// Bob's b1 is called to play
+	take_turn(&mut game, "Bob clues blue to Cathy");
+
+	take_turn(&mut game, "Cathy plays g1, drawing y3");
+	take_turn(&mut game, "Alice clues 1 to Bob");			// Reverse reactive, getting Cathy's g2 and Bob's b2 (4 + 2 = 1)
+
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][3]].status, CardStatus::CalledToPlay);
+
+	take_turn(&mut game, "Bob plays b1, drawing y5");
+	ex_asserts::has_inferences(&game, None, Player::Cathy, 4, &["r1", "y1", "g2", "p1"]);
+}
+#[test]
 fn it_elims_a_reactive_play_play() {
 	let mut game = util::setup(Arc::new(Reactor), &[
 		&["xx", "xx", "xx", "xx", "xx"],

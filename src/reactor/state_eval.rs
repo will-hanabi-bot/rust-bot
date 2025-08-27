@@ -37,8 +37,9 @@ impl Reactor {
 			return -100.0;
 		}
 
-		if !bad_touch.is_empty() && new_touched.iter().all(|o| bad_touch.contains(o)) && playables.is_empty() {
-			warn!("clue {} only bad touches and gets no playables! {:?}", clue.fmt(state, *target), common.hypo_plays);
+		if hypo.state.clue_tokens == Fraction::ZERO &&
+			let Some(bad_zcs) = state.hands.concat().iter().find(|&&o| hypo.meta[o].status == CardStatus::ZeroClueChop && state.deck[o].id().is_some_and(|i| state.is_critical(i))) {
+			warn!("clue {} results in bad zcs {} {bad_zcs}!", clue.fmt(state, *target), state.log_iden(&state.deck[*bad_zcs]));
 			return -100.0;
 		}
 
@@ -50,6 +51,11 @@ impl Reactor {
 
 			if last_move == &ClueInterp::Reveal && playables.is_empty() && !trash.is_empty() && trash.iter().all(|o| !state.deck[*o].clued) {
 				warn!("clue {} only reveals new trash but isn't a trash push!", clue.fmt(state, *target));
+				return -100.0;
+			}
+
+			if last_move != &ClueInterp::Reactive && !bad_touch.is_empty() && new_touched.iter().all(|o| bad_touch.contains(o)) && playables.is_empty() {
+				warn!("clue {} only bad touches and gets no playables! {:?}", clue.fmt(state, *target), common.hypo_plays);
 				return -100.0;
 			}
 		}
@@ -152,6 +158,7 @@ impl Reactor {
 				let locked_dc = game.players[player_index].locked_discard(state, player_index);
 				let id = state.deck[locked_dc].id().unwrap();
 				let action = Action::discard(player_index, locked_dc, id.suit_index as i32, id.rank as i32, false);
+				info!("locked discard!");
 				Reactor::advance(&Reactor::advance_game(game, &action), offset + 1)
 			}
 			else {
@@ -172,13 +179,14 @@ impl Reactor {
 
 		let bob = state.next_player_index(player_index);
 
-		if offset == 1 && !common.thinks_loaded(&frame, bob) && let Some(chop) = Reactor::chop(game, bob) {
+		if !state.hands[player_index].iter().any(|&o| meta[o].urgent) && offset == 1 && !common.thinks_loaded(&frame, bob) && let Some(chop) = Reactor::chop(game, bob) {
 			let id = state.deck[*chop].id().unwrap();
 
 			// Assume Alice will clue Bob
 			if state.can_clue() && (state.is_critical(id) || state.is_playable(id)) {
 				let mut next_game = game.simulate_clean();
 				next_game.state.clue_tokens -= 1;
+				info!("forcing {} to clue bob!", state.player_names[player_index]);
 				return Reactor::eval_game(&next_game);
 			}
 		}
@@ -187,7 +195,7 @@ impl Reactor {
 
 		match urgent_dc.or_else(|| trash.first()) {
 			None => {
-				if let Some(chop) = state.hands[player_index].iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None) {
+				if let Some(chop) = Reactor::chop(game, player_index) {
 					let id = state.deck[*chop].id().unwrap();
 					let action = Action::discard(player_index, *chop, id.suit_index as i32, id.rank as i32, false);
 					let dc_game = Reactor::advance_game(game, &action);

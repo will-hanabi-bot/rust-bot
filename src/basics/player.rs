@@ -1,12 +1,10 @@
-use crate::basics::card::ConvData;
+use crate::basics::card::{CardStatus, ConvData, IdOptions, Identifiable, Identity, MatchOptions, Thought};
 use crate::basics::clue::BaseClue;
-use crate::basics::game::{frame::Frame};
+use crate::basics::game::frame::Frame;
 use crate::basics::identity_set::IdentitySet;
+use crate::basics::state::State;
 use crate::basics::util::visible_find;
 
-use super::card::{CardStatus, IdOptions, Identifiable, Identity, MatchOptions, Thought};
-use super::state::State;
-use std::collections::{HashSet};
 use ahash::AHashSet;
 use itertools::Itertools;
 use log::warn;
@@ -162,11 +160,7 @@ impl Player {
 			return false;
 		}
 
-		if thought.possible.iter().all(|id| self.is_trash(frame, id, order)) {
-			return true;
-		}
-
-		if *trash || *status == CardStatus::CalledToDiscard {
+		if thought.possible.iter().all(|id| self.is_trash(frame, id, order)) || *trash || *status == CardStatus::CalledToDiscard {
 			return true;
 		}
 
@@ -278,27 +272,6 @@ impl Player {
 		visible_find(state, self, id, MatchOptions { infer: true, ..Default::default() }, |_, _| true).len() == 1
 	}
 
-	pub fn card_value(&self, frame: &Frame, id: Identity, order: Option<usize>) -> usize {
-		let Identity { suit_index, rank } = id;
-
-		if self.is_trash(frame, id, order.unwrap_or(99)) ||
-			visible_find(frame.state, self, id, MatchOptions { infer: true, ..Default::default() }, |_, _| true).len() > 1 {
-			0
-		}
-		else if frame.state.is_critical(id) {
-			5
-		}
-		else if self.save2(frame.state, id) {
-			4
-		}
-		else if rank < self.hypo_stacks[suit_index] {
-			0
-		}
-		else {
-			5 - (rank - self.hypo_stacks[suit_index])
-		}
-	}
-
 	pub fn locked_discard(&self, state: &State, player_index: usize) -> usize {
 		let crit_percents = state.hands[player_index].iter().map(|&o| {
 			let poss = self.thoughts[o].possibilities();
@@ -322,8 +295,8 @@ impl Player {
 		state.card_count(id) - state.base_count(id) - visible_count
 	}
 
-	pub fn linked_orders(&self, state: &State) -> HashSet<usize> {
-		let mut orders = HashSet::new();
+	pub fn linked_orders(&self, state: &State) -> AHashSet<usize> {
+		let mut orders = AHashSet::new();
 		for link in &self.links {
 			match link {
 				Link::Promised { orders: link_orders, id, .. } => {

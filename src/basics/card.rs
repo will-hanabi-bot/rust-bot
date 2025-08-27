@@ -96,6 +96,7 @@ pub enum CardStatus {
 	ChopMoved,
 	CalledToPlay,
 	CalledToDiscard,
+	ZeroClueChop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +115,7 @@ impl Display for CardStatus {
 			CardStatus::ChopMoved => write!(f, "chop moved"),
 			CardStatus::CalledToPlay => write!(f, "called to play"),
 			CardStatus::CalledToDiscard => write!(f, "called to discard"),
+			CardStatus::ZeroClueChop => write!(f, "zero clue chop"),
 		}
 	}
 }

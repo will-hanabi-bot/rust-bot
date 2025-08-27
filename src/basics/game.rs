@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::basics::{self, on_draw};
 use crate::basics::action::{Action, ClueAction, DiscardAction,DrawAction, InterpAction, PerformAction, PlayAction, TurnAction};
-use crate::basics::card::{CardStatus, ConvData, Identity};
+use crate::basics::card::{CardStatus, ConvData, Identifiable, Identity};
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::{Link, Player};
 use crate::basics::util::FastMap;
@@ -276,17 +276,17 @@ impl Game {
 
 	pub fn rewind(&self, turn: usize, rewind_action: Action) -> Result<Self, String> {
 		if turn < 1 || turn > self.state.action_list.len() + 1 {
-			return Err(format!("Attempted to rewind to invalid turn {turn}!"));
+			return Err(format!("attempted to rewind to invalid turn {turn}"));
 		}
 
 		info!("{}", format!("Rewinding to insert {rewind_action:?} on turn {turn}!").blue());
 
 		if self.state.action_list[turn].contains(&rewind_action) {
-			return Err("Action was already rewinded!".to_owned());
+			return Err("action was already rewinded".to_owned());
 		}
 
 		if self.rewind_depth > 2 {
-			return Err("Rewind depth went too deep!".to_owned());
+			return Err("rewind depth went too deep".to_owned());
 		}
 
 		info!("{}", "------- STARTING REWIND -------".green());

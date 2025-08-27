@@ -161,7 +161,18 @@ impl Reactor {
 	fn target_iplay(_prev: &Game, game: &mut Game, wc: &WaitingConnection, target_slot: usize) {
 		let Game { common, state, meta, .. } = game;
 		let order = wc.receiver_hand[target_slot - 1];
-		let meta = &mut meta[order];
+
+		if meta[order].status == CardStatus::ZeroClueChop {
+			if let Some(new_zcs) = state.hands[wc.receiver].iter().find(|&&o| o < order && !state.deck[o].clued && meta[o].status == CardStatus::None) {
+				info!("shifting zcs forward to {new_zcs}!");
+				meta[*new_zcs].status = CardStatus::ZeroClueChop;
+			}
+			else {
+				warn!("unable to shift zcs forward!");
+			}
+		}
+
+		let meta = &mut game.meta[order];
 
 		common.thoughts[order].old_inferred = Some(common.thoughts[order].inferred);
 		common.thoughts[order].inferred.retain(|i| state.is_playable(i));

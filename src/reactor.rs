@@ -46,8 +46,11 @@ impl Reactor {
 		}
 	}
 
-	fn chop(game: &Game, player_index: usize) -> Option<&usize> {
+	pub fn chop(game: &Game, player_index: usize) -> Option<&usize> {
 		let Game { state, meta, .. } = game;
+		if let Some(zcs) = state.hands[player_index].iter().find(|&&o| meta[o].status == CardStatus::ZeroClueChop) {
+			return Some(zcs);
+		}
 		state.hands[player_index].iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None)
 	}
 }
@@ -127,9 +130,6 @@ impl Convention for Reactor {
 			prev.meta[o].status != CardStatus::CalledToPlay && game.meta[o].status == CardStatus::CalledToPlay
 		).collect::<Vec<_>>();
 
-		// let frame = Frame::new(&game.state, &game.meta);
-		// game.common.good_touch_elim(&frame);
-		// game.common.refresh_links(&frame, true);
 		basics::elim(game, false);
 
 		let signalled_plays_after_elim = game.state.hands.concat().into_iter().filter(|&o| game.meta[o].status == CardStatus::CalledToPlay).collect::<Vec<_>>();
@@ -137,6 +137,27 @@ impl Convention for Reactor {
 			warn!("lost play signal on {:?} after elim!", signalled_plays.iter().filter(|o| !signalled_plays_after_elim.contains(o)).collect::<Vec<_>>());
 			game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake)));
 		}
+
+		// Reset zcs
+		if prev.state.can_clue() {
+			for hand in &game.state.hands {
+				if let Some(order) = hand.iter().find(|o| game.meta[**o].status == CardStatus::ZeroClueChop) {
+					game.meta[*order].status = CardStatus::None;
+					info!("resetting zcs on {order}");
+				}
+			}
+		}
+
+		if !game.state.can_clue() {
+			for i in 0..game.state.num_players {
+				if let Some(chop) = Reactor::chop(game, i) {
+					let order = *chop;
+					game.meta[order].status = CardStatus::ZeroClueChop;
+					info!("writing zcs on {order}");
+				}
+			}
+		}
+
 		game.next_interp = None;
 	}
 
@@ -164,10 +185,17 @@ impl Convention for Reactor {
 			Reactor::react_discard(prev, game, *player_index, *order, &wc);
 		}
 
-		// let frame = Frame::new(&game.state, &game.meta);
-		// game.common.good_touch_elim(&frame);
-		// game.common.refresh_links(&frame, true);
 		basics::elim(game, false);
+
+		// Reset zcs
+		if prev.state.can_clue() {
+			for hand in &game.state.hands {
+				if let Some(order) = hand.iter().find(|o| game.meta[**o].status == CardStatus::ZeroClueChop) {
+					game.meta[*order].status = CardStatus::None;
+					info!("resetting zcs on {order}");
+				}
+			}
+		}
 	}
 
 	fn interpret_play(&self, prev: &Game, game: &mut Game, action: &PlayAction) {
@@ -178,10 +206,17 @@ impl Convention for Reactor {
 			Reactor::react_play(prev, game, *player_index, *order, &wc);
 		}
 
-		// let frame = Frame::new(&game.state, &game.meta);
-		// game.common.good_touch_elim(&frame);
-		// game.common.refresh_links(&frame, true);
 		basics::elim(game, false);
+
+		// Reset zcs
+		if prev.state.can_clue() {
+			for hand in &game.state.hands {
+				if let Some(order) = hand.iter().find(|o| game.meta[**o].status == CardStatus::ZeroClueChop) {
+					game.meta[*order].status = CardStatus::None;
+					info!("resetting zcs on {order}");
+				}
+			}
+		}
 	}
 
 	fn take_action(&self, game: &Game) -> PerformAction {

@@ -285,3 +285,30 @@ fn it_understands_bob_wont_react_if_alternative_is_on_them() {
 
 	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][1]].status, CardStatus::None);
 }
+
+#[test]
+fn it_discards_zcs() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["y4", "r2", "g1", "g2", "p2"],
+		&["r1", "p4", "g4", "y5", "r4"],
+	], TestOptions {
+		clue_tokens: Fraction::from(1),
+		..TestOptions::default()
+	});
+
+	// Taking the team down to 0 clues - Bob writes ZCS on y4, Cathy writes ZCS on p4.
+	take_turn(&mut game, "Alice clues 5 to Cathy");
+
+	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::ZeroClueChop);
+
+	take_turn(&mut game, "Bob plays g1, drawing b1");
+
+	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][1]].status, CardStatus::ZeroClueChop);
+
+	take_turn(&mut game, "Cathy plays r1, drawing y3");
+	take_turn(&mut game, "Alice discards p4 (slot 1)");
+
+	// Bob's chop should be slot 2.
+	assert_eq!(Reactor::chop(&game, Player::Bob as usize), Some(&game.state.hands[Player::Bob as usize][1]));
+}

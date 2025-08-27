@@ -117,7 +117,9 @@ pub fn on_draw(game: &mut Game, action: &DrawAction) {
 		deck_ids.push(id);
 	}
 	else if deck_ids.len() > order {
-		deck_ids[order] = id;
+		if deck_ids[order].is_none() {
+			deck_ids[order] = id;
+		}
 	}
 	else {
 		panic!("Only have {} deck ids, but drew card with order {}!", deck_ids.len(), order);
