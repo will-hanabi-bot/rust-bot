@@ -142,7 +142,7 @@ impl EndgameSolver {
 						// We cannot assign a trash id if it is linked and all other orders are already trash
 						(!linked_orders.contains(order) || game.me().links.iter().all(|l| {
 							match l {
-								Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => {
+								Link::Promised { orders, .. } | Link::Unpromised { orders, .. } | Link::Sarcastic { orders, .. } => {
 									!orders.contains(order) || orders.iter().all(|o| o == order || (0..ids.len()).any(|i| o == unknown_own[i] && state.is_basic_trash(ids[i])))
 								}
 							}

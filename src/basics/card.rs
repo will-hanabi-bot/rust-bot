@@ -96,6 +96,8 @@ pub enum CardStatus {
 	ChopMoved,
 	CalledToPlay,
 	CalledToDiscard,
+	Sarcastic,
+	GentlemansDiscard,
 	ZeroClueChop,
 }
 
@@ -115,6 +117,8 @@ impl Display for CardStatus {
 			CardStatus::ChopMoved => write!(f, "chop moved"),
 			CardStatus::CalledToPlay => write!(f, "called to play"),
 			CardStatus::CalledToDiscard => write!(f, "called to discard"),
+			CardStatus::Sarcastic => write!(f, "sarcastic"),
+			CardStatus::GentlemansDiscard => write!(f, "gentleman's discard"),
 			CardStatus::ZeroClueChop => write!(f, "zero clue chop"),
 		}
 	}
@@ -204,10 +208,13 @@ impl Thought {
 	}
 
 	pub fn reset_inferences(&mut self) {
+		if self.reset {
+			return;
+		}
 		self.reset = true;
 		self.inferred = self.possible;
 		if let Some(info_lock) = &self.info_lock {
-			self.inferred.intersect(info_lock);
+			self.inferred = self.inferred.intersect(info_lock);
 		}
 	}
 }

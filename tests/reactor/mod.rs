@@ -1,5 +1,5 @@
 use fraction::Fraction;
-use rust_bot::basics::action::{Action, ClueAction, PerformAction};
+use rust_bot::basics::action::{Action, ClueAction, DiscardAction, PerformAction};
 use rust_bot::basics::card::CardStatus;
 use rust_bot::basics::clue::BaseClue;
 use rust_bot::basics::{clue::ClueKind};
@@ -311,4 +311,74 @@ fn it_discards_zcs() {
 
 	// Bob's chop should be slot 2.
 	assert_eq!(Reactor::chop(&game, Player::Bob as usize), Some(&game.state.hands[Player::Bob as usize][1]));
+}
+
+#[test]
+fn it_interprets_a_gd() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["y1", "r2", "g1", "g2", "p2"],
+		&["r3", "p4", "g5", "y4", "r4"],
+	], TestOptions {
+		init: Box::new(|game: &mut Game| {
+			fully_known(game, Player::Bob, 1, "y1");
+		}),
+		starting: Player::Bob,
+		clue_tokens: Fraction::from(6),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Bob discards y1, drawing y4");
+
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][4]].status, CardStatus::GentlemansDiscard);
+	ex_asserts::has_inferences(&game, None, Player::Alice, 5, &["y1"]);
+	assert!(game.common.obvious_playables(&game.frame(), Player::Alice as usize).contains(&0));
+}
+
+#[test]
+fn it_interprets_a_sarcastic() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["y1", "r2", "g1", "g2", "p2"],
+		&["r3", "p4", "g5", "y4", "r4"],
+	], TestOptions {
+		init: Box::new(|game: &mut Game| {
+			fully_known(game, Player::Bob, 2, "r2");
+		}),
+		starting: Player::Bob,
+		clue_tokens: Fraction::from(6),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Bob discards r2, drawing y4");
+	take_turn(&mut game, "Cathy clues blue to Alice (slots 2,3,4)");
+	take_turn(&mut game, "Alice plays r1 (slot 1)");
+
+	// assert_eq!(game.meta[game.state.hands[Player::Alice as usize][4]].status, CardStatus::Sarcastic);
+	ex_asserts::has_inferences(&game, None, Player::Alice, 5, &["r2"]);
+	assert!(game.common.obvious_playables(&game.frame(), Player::Alice as usize).contains(&0));
+}
+
+#[test]
+fn it_doesnt_perform_a_bad_gd() {
+	let game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["y1", "r2", "g1", "g2", "p2"],
+		&["r3", "p4", "g5", "y4", "r4"],
+	], TestOptions {
+		init: Box::new(|game: &mut Game| {
+			fully_known(game, Player::Alice, 5, "g1");
+
+			pre_clue(game, Player::Bob, 3, &[TestClue { giver: Player::Alice, kind: ClueKind::COLOUR, value: Colour::Green as usize }]);
+			pre_clue(game, Player::Bob, 4, &[TestClue { giver: Player::Alice, kind: ClueKind::COLOUR, value: Colour::Green as usize }]);
+		}),
+		clue_tokens: Fraction::from(6),
+		..TestOptions::default()
+	});
+
+	let action = Action::Discard(DiscardAction { order: 0, player_index: Player::Alice as usize, suit_index: 2, rank: 1, failed: false });
+	let result = Reactor::eval_action(&game, &action);
+
+	// Discarding g1 in slot 5 is a bad GD.
+	assert_eq!(result, -100.0);
 }

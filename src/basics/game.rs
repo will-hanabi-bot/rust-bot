@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::basics::{self, on_draw};
 use crate::basics::action::{Action, ClueAction, DiscardAction,DrawAction, InterpAction, PerformAction, PlayAction, TurnAction};
-use crate::basics::card::{CardStatus, ConvData, Identifiable, Identity};
+use crate::basics::card::{CardStatus, ConvData, Identity};
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::{Link, Player};
 use crate::basics::util::FastMap;

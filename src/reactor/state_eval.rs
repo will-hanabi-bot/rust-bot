@@ -5,9 +5,9 @@ use log::{info, warn};
 use crate::basics::game::SimOpts;
 use crate::basics::state::State;
 use crate::basics::variant::all_ids;
-use crate::reactor::{ClueInterp, Reactor, ReactorInterp};
-use crate::basics::action::{Action, ClueAction, PlayAction};
-use crate::basics::card::{CardStatus, Identifiable, Identity};
+use crate::reactor::{ClueInterp, DiscardInterp, Reactor, ReactorInterp};
+use crate::basics::action::{Action, ClueAction, DiscardAction, PlayAction};
+use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity};
 use crate::basics::game::{Game, Interp};
 use crate::basics::clue_result::{bad_touch_result, elim_result, playables_result, BadTouchResult, ElimResult, PlayablesResult};
 
@@ -25,8 +25,9 @@ impl Reactor {
 		let revealed_trash = hypo_common.thinks_trash(&hypo_frame, *target).iter().filter(|&o|
 			hypo_state.deck[*o].clued && !common.thinks_trash(&game.frame(), *target).contains(o)).count();
 
-		let new_playables = state.hands.concat().iter().filter(|&o| meta[*o].status != CardStatus::CalledToPlay &&
-			hypo.meta[*o].status == CardStatus::CalledToPlay).copied().collect::<Vec<_>>();
+		let new_playables = state.hands.concat().iter().filter(|&o|
+			meta[*o].status != CardStatus::CalledToPlay && hypo.meta[*o].status == CardStatus::CalledToPlay
+		).copied().collect::<Vec<_>>();
 
 		let bad_playable = new_playables.iter().find(|&o|
 			!(hypo.me().hypo_plays.contains(o) || (state.in_endgame() && state.deck[*o].id().is_some_and(|i| state.is_playable(i))))
@@ -264,8 +265,11 @@ impl Reactor {
 					1.5
 				}
 				else {
-					0.0
+					0.02 * (5 - rank) as f32
 				}
+			},
+			Action::Discard(DiscardAction { .. }) if matches!(hypo_game.last_move, Some(Interp::Reactor(ReactorInterp::Discard(DiscardInterp::Mistake)))) => {
+				return	-100.0;
 			},
 			_ => 0.0
 		};
@@ -326,7 +330,7 @@ impl Reactor {
 
 		for &order in &state.hands.concat() {
 			if meta[order].status == CardStatus::CalledToPlay {
-				future_val += match state.deck[order].id() {
+				future_val += match game.me().thoughts[order].identity(&IdOptions { infer: true, ..Default::default()}) {
 					None => 0.4,
 					Some(id) => if state.is_basic_trash(id) {
 							-1.5

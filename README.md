@@ -6,7 +6,7 @@ It only plays with [Reactor 1.0 conventions](https://hanabi.wiki/en/conventions/
 
 ## Bot features
 
-- It can play No Variant.
+- Supports all the basic variants (Black, Rainbow, Prism, Pink, Brown + their blends), Critical Fours, and Clue Starved.
 - Takes notes during the game on what it thinks each player knows about their own hand.
 - Can replay completed games on hanab.live and offer suggested actions.
 
@@ -52,3 +52,5 @@ The bot can play games with copies of itself using `cargo run --release --bin se
 - `games=<numGames>` sets the number of games to play (defaults to 1)
 - `seed=<seed>` sets the seed of the first game to be played (defaults to 0)
     - The seeding algorithm is different from the one used on hanab.live.
+
+The final score for each seed as well as how each game terminated are logged to the console. JSON replays of each game are saved to a `seeds` folder, which can be loaded into hanab.live for viewing.

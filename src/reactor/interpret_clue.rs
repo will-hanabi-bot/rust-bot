@@ -121,8 +121,8 @@ impl Reactor {
 
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
-		let prev_playables = prev.common.obvious_playables(&prev.frame(), *target).into_iter().chain(connectable_simple(prev, state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
-		let playables = common.obvious_playables(&frame, *target).into_iter().chain(connectable_simple(game, state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
+		let prev_playables = prev.common.obvious_playables(&prev.frame(), *target).into_iter().chain(connectable_simple(prev, &prev.players[*giver], state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
+		let playables = common.obvious_playables(&frame, *target).into_iter().chain(connectable_simple(game, &game.players[*giver], state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
 
 		info!("playables {playables:?}, prev_playables {prev_playables:?}");
 
@@ -143,16 +143,12 @@ impl Reactor {
 			return None;
 		}
 
-		let colour_reveal = clue.kind == ClueKind::COLOUR && {
-			let prev_playables = prev.common.obvious_playables(&prev.frame(), *target);
-			let curr_playables = common.obvious_playables(&frame, *target);
+		if !playables.is_empty() && playables.iter().any(|o| !prev_playables.contains(o) && prev.state.deck[*o].clued) {
+			info!("revealed a safe action!");
+			return Some(ClueInterp::Reveal);
+		}
 
-			// A colour clue that reveals a new playable in a previously touched card
-			curr_playables.iter().any(|o| !prev_playables.contains(o) && prev.state.deck[*o].clued)
-		};
-
-		let trash_push = !colour_reveal && common.order_kt(&frame, *newly_touched.iter().max().unwrap());
-		if trash_push {
+		if common.order_kt(&frame, *newly_touched.iter().max().unwrap()) {
 			// Brownish TCM if there is at least 1 useful unplayable brown and clue didn't touch chop
 			if state.includes_variant(&BROWNISH) && clue.kind == ClueKind::RANK &&
 				state.variant.suits.iter().enumerate().any(|(suit_index, suit)| BROWNISH.is_match(suit) && state.play_stacks[suit_index] + 1 < state.max_ranks[suit_index]) &&
@@ -163,13 +159,6 @@ impl Reactor {
 				info!("trash push!");
 				return Reactor::ref_play(prev, game, action);
 			}
-		}
-
-		let reveal = !playables.is_empty() && (clue.kind == ClueKind::RANK || colour_reveal);
-
-		if reveal {
-			info!("revealed a safe action!");
-			return Some(ClueInterp::Reveal);
 		}
 
 		if clue.kind == ClueKind::COLOUR {
@@ -614,6 +603,7 @@ impl Reactor {
 		let reset = new_inferred.is_empty();
 		game.common.thoughts[target].old_inferred = Some(game.common.thoughts[target].inferred);
 		game.common.thoughts[target].inferred = new_inferred;
+		game.common.thoughts[target].info_lock = Some(new_inferred);
 
 		if game.meta[target].reasoning.last().is_none_or(|r| *r != game.state.turn_count) {
 			game.meta[target].reasoning.push(game.state.turn_count);

@@ -95,7 +95,7 @@ fn it_doesnt_focus_the_wrong_card_for_the_last_id() {
 		&["r1", "y1", "g1", "b1", "p1"],
 		&["r1", "y1", "g1", "b1", "p1"],
 	], TestOptions {
-		play_stacks: Some(&[5, 5, 5, 5, 2]),
+		play_stacks: Some(&[3, 3, 3, 3, 2]),
 		starting: Player::Cathy,
 		// Alice's slot 5 is clued with purple.
 		init: Box::new(|game: &mut Game| {

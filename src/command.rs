@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use log::{error, info, warn};
 use serde::{Deserialize};
 use serde_json::json;
@@ -5,10 +6,13 @@ use tokio::{spawn, sync::mpsc, time::sleep};
 use std::sync::Arc;
 use std::{collections::{HashMap, VecDeque}, time::Duration};
 
+use crate::basics::action::TurnAction;
 use crate::reactor::Reactor;
 use crate::websocket::{send_chat, send_cmd, send_pm};
 use crate::basics::{action::Action, game::Game, state::State, variant::VariantManager};
 use crate::console::{DebugCommand, NavArg};
+
+const BOT_VERSION: &str = "v1.0.0 (rust-bot)";
 
 #[derive(Deserialize)]
 struct ChatMessage {
@@ -166,6 +170,9 @@ impl BotClient {
 
 							println!("{}: {} {:?}", order, state.log_iden(&state.deck[order]), meta.status);
 							println!("inferred: [{}]", player.str_infs(state, order));
+							if let Some(info_lock) = player.thoughts[order].info_lock {
+								println!("info lock: [{}]", info_lock.iter().map(|i| state.log_id(i)).join(","));
+							}
 							println!("possible: [{}]", player.str_poss(state, order));
 							println!("reasoning: {:?}", meta.reasoning);
 							if !flags.is_empty() {
@@ -371,7 +378,7 @@ impl BotClient {
 		}
 
 		if msg.starts_with("/version") {
-			send_pm(&self.ws, who, "v0.11.0 (rust-bot)");
+			send_pm(&self.ws, who, BOT_VERSION);
 		}
 	}
 
@@ -379,6 +386,14 @@ impl BotClient {
 		let GameActionMessage { action, .. } = data;
 		if let Some(game) = &mut self.game {
 			game.handle_action(&action);
+
+			match action {
+				Action::Turn(TurnAction { num, .. }) if num == 1 && !game.notes.contains_key(&0) => {
+					let note = format!("[INFO: v{BOT_VERSION}]");
+					send_cmd(&self.ws, "note", &json!({ "order": 0, "note": note }).to_string());
+				},
+				_ => ()
+			}
 
 			for (cmd, arg) in &game.queued_cmds {
 				send_cmd(&self.ws, cmd, arg);

@@ -1,6 +1,7 @@
 use crate::basics::action::{Action, ClueAction};
 use crate::basics::card::{IdOptions, Identifiable, Identity, MatchOptions};
 use crate::basics::game::{Game};
+use crate::basics::player::Player;
 
 pub fn check_fix(prev: &Game, game: &Game, action: &ClueAction) -> (Vec<usize>, Vec<usize>) {
 	let ClueAction { list, .. } = action;
@@ -28,15 +29,15 @@ pub fn check_fix(prev: &Game, game: &Game, action: &ClueAction) -> (Vec<usize>, 
 	(clued_resets, duplicate_reveals)
 }
 
-pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<Identity>) -> Vec<usize> {
-	let Game { state, players, .. } = game;
+pub fn connectable_simple(game: &Game, player: &Player, start: usize, target: usize, id: Option<Identity>) -> Vec<usize> {
+	let Game { state, .. } = game;
 
 	if let Some(id) = id && state.is_playable(id) {
 		return vec![99];
 	}
 
 	if start == target {
-		return players[target].obvious_playables(&game.frame(), target);
+		return player.obvious_playables(&game.frame(), target);
 	}
 
 	if game.state.ended() {
@@ -44,22 +45,22 @@ pub fn connectable_simple(game: &Game, start: usize, target: usize, id: Option<I
 	}
 
 	let next_player_index = state.next_player_index(start);
-	let playables = players[start].obvious_playables(&game.frame(), start);
+	let playables = player.obvious_playables(&game.frame(), start);
 
 	for order in playables {
-		let play_id = players[start].thoughts[order].identity(&IdOptions { infer: true, ..Default::default() });
+		let play_id = player.thoughts[order].identity(&IdOptions { infer: true, ..Default::default() });
 
 		// Simulate playing the card
 		if let Some(play_id) = play_id {
 			let mut new_game = game.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32), None);
 			new_game = new_game.simulate_action(&Action::turn(state.turn_count, next_player_index as i32), None);
 
-			let play_connectables = connectable_simple(&new_game, next_player_index, target, id);
+			let play_connectables = connectable_simple(&new_game, player, next_player_index, target, id);
 
 			if !play_connectables.is_empty() {
 				return play_connectables;
 			}
 		}
 	}
-	connectable_simple(game, next_player_index, target, id)
+	connectable_simple(game, player, next_player_index, target, id)
 }

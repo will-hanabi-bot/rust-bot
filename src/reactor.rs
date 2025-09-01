@@ -6,14 +6,15 @@ use serde::Deserialize;
 
 use crate::basics;
 use crate::basics::card::{CardStatus, IdOptions, Identifiable, Identity};
-use crate::basics::endgame::{EndgameSolver};
+use crate::basics::endgame::EndgameSolver;
 use crate::basics::game::SimOpts;
-use crate::basics::game::{Convention, frame::Frame, Game, Interp};
+use crate::basics::game::{Convention, Game, Interp};
 use crate::basics::action::{Action, ClueAction, DiscardAction, PerformAction, PlayAction, TurnAction};
 use crate::basics::util;
 use crate::fix::check_fix;
 
 mod interpret_clue;
+mod interpret_dc;
 mod interpret_reaction;
 mod state_eval;
 
@@ -24,9 +25,15 @@ pub enum ClueInterp {
 	Illegal, Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Fix, Reclue, Stall
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+pub enum DiscardInterp {
+	None, Mistake, Sarcastic, GentlemansDiscard
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReactorInterp {
 	Clue(ClueInterp),
+	Discard(DiscardInterp),
 }
 
 impl Reactor {
@@ -48,8 +55,8 @@ impl Reactor {
 
 	pub fn chop(game: &Game, player_index: usize) -> Option<&usize> {
 		let Game { state, meta, .. } = game;
-		if let Some(zcs) = state.hands[player_index].iter().find(|&&o| meta[o].status == CardStatus::ZeroClueChop) {
-			return Some(zcs);
+		if let Some(known_dc) = state.hands[player_index].iter().find(|&&o| meta[o].status == CardStatus::ZeroClueChop || meta[o].status == CardStatus::CalledToDiscard) {
+			return Some(known_dc);
 		}
 		state.hands[player_index].iter().find(|&&o| !state.deck[o].clued && meta[o].status == CardStatus::None)
 	}
@@ -150,7 +157,7 @@ impl Convention for Reactor {
 
 		if !game.state.can_clue() {
 			for i in 0..game.state.num_players {
-				if let Some(chop) = Reactor::chop(game, i) {
+				if let Some(chop) = Reactor::chop(game, i) && game.meta[*chop].status == CardStatus::None {
 					let order = *chop;
 					game.meta[order].status = CardStatus::ZeroClueChop;
 					info!("writing zcs on {order}");
@@ -162,7 +169,8 @@ impl Convention for Reactor {
 	}
 
 	fn interpret_discard(&self, prev: &Game, game: &mut Game, action: &DiscardAction) {
-		let DiscardAction { player_index, order, failed, .. } = action;
+		let DiscardAction { player_index, order, failed, suit_index, rank, .. } = action;
+		let id = Identity { suit_index: *suit_index as usize, rank: *rank as usize };
 		Reactor::check_missed(game, *player_index, *order);
 
 		if *failed {
@@ -183,6 +191,10 @@ impl Convention for Reactor {
 
 		if let Some(wc) = game.common.waiting.clone() {
 			Reactor::react_discard(prev, game, *player_index, *order, &wc);
+		}
+		else if !failed && prev.state.deck[*order].clued && *suit_index != -1 && *rank != -1 && !game.state.is_basic_trash(id) {
+			let interp = Reactor::interpret_useful_dc(game, action);
+			game.last_move = Some(Interp::Reactor(ReactorInterp::Discard(interp)));
 		}
 
 		basics::elim(game, false);
@@ -359,8 +371,6 @@ impl Convention for Reactor {
 					}
 				}
 			}
-			let frame = Frame::new(state, meta);
-			game.common.refresh_links(&frame, true);
 			basics::elim(game, true);
 		}
 	}

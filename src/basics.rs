@@ -201,8 +201,8 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 		resets.extend(common.good_touch_elim(&frame));
 	}
 
-	common.refresh_links(&frame, good_touch);
-	common.update_hypo_stacks(&frame, &[]);
+	let sarcastics = common.refresh_links(&frame, good_touch);
+	common.update_hypo_stacks(&frame);
 
 	for player in players {
 		for (i, thought) in player.thoughts.iter_mut().enumerate() {
@@ -220,7 +220,11 @@ pub fn elim(game: &mut Game, good_touch: bool) {
 		}
 
 		player.refresh_links(&frame, good_touch);
-		player.update_hypo_stacks(&frame, &[]);
+		player.update_hypo_stacks(&frame);
+	}
+
+	for order in sarcastics {
+		meta[order].status = CardStatus::Sarcastic;
 	}
 
 	for order in resets {

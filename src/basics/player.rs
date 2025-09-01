@@ -14,6 +14,7 @@ mod elim;
 #[derive(Debug, Clone)]
 pub enum Link {
 	Promised { orders: Vec<usize>, id: Identity, target: usize },
+	Sarcastic { orders: Vec<usize>, id: Identity },
 	Unpromised { orders: Vec<usize>, ids: Vec<Identity> }
 }
 
@@ -117,12 +118,11 @@ impl Player {
 		}
 
 		self.links.iter().any(|l| match l {
-			Link::Promised { orders, id: promise, .. } => {
-				!orders.contains(&order) && *promise == id
-			}
-			Link::Unpromised { orders, ids } => {
-				!orders.contains(&order) && ids.contains(&id)
-			}
+			Link::Promised { orders, id: promise, .. } | Link::Sarcastic { orders, id: promise } =>
+				!orders.contains(&order) && *promise == id,
+
+			Link::Unpromised { orders, ids } =>
+				!orders.contains(&order) && ids.contains(&id),
 		})
 	}
 
@@ -136,12 +136,11 @@ impl Player {
 			self.thoughts[o].matches(&id, &MatchOptions { infer: true, ..Default::default() }) &&
 			// Not sharing a link
 			!self.links.iter().any(|l| match l {
-				Link::Promised { orders, id: promise, .. } => {
-					orders.contains(&order) && orders.contains(&o) && *promise == id
-				}
-				Link::Unpromised { orders, ids } => {
+				Link::Promised { orders, id: promise, .. } | Link::Sarcastic { orders, id: promise } =>
+					orders.contains(&order) && orders.contains(&o) && *promise == id,
+
+				Link::Unpromised { orders, ids } =>
 					orders.contains(&order) && orders.contains(&o) && ids.contains(&id)
-				}
 			})
 		)
 	}
@@ -177,12 +176,17 @@ impl Player {
 	}
 
 	pub fn order_kp(&self, frame: &Frame, order: usize) -> bool {
-		if frame.meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
-			return true;
-		}
+		let Frame { state, meta } = frame;
+		match meta[order].status {
+			CardStatus::CalledToPlay =>
+				self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) &&
+				self.thoughts[order].info_lock.is_none_or(|ids| ids.iter().any(|i| frame.state.is_playable(i))),
 
-		let poss = if frame.meta[order].focused { self.thoughts[order].possibilities() } else { self.thoughts[order].possible };
-		poss.iter().all(|id| frame.state.is_playable(id))
+			CardStatus::Sarcastic | CardStatus::GentlemansDiscard => self.thoughts[order].inferred.iter().all(|id| state.is_playable(id)),
+
+			_ => self.thoughts[order].possible.iter().all(|id| state.is_playable(id)) ||
+				self.thoughts[order].info_lock.is_some_and(|ids| ids.iter().all(|id| state.is_playable(id)))
+		}
 	}
 
 	pub fn thinks_locked(&self, frame: &Frame, player_index: usize) -> bool {
@@ -194,31 +198,14 @@ impl Player {
 	}
 
 	pub fn obvious_playables(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
-		let Frame { state, meta } = frame;
-
-		state.hands[player_index].iter().filter_map(|&order| {
-			if meta[order].status == CardStatus::CalledToPlay && self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) {
-				return Some(order);
-			}
-
-			if self.thoughts[order].possible.iter().all(|id| state.is_playable(id)) {
-				return Some(order);
-			}
-
-			self.thoughts[order].info_lock.is_some_and(|ids| ids.iter().all(|id| state.is_playable(id))).then_some(order)
-		}).collect()
+		frame.state.hands[player_index].iter().filter(|&&order| self.order_kp(frame, order)).copied().collect()
 	}
 
 	pub fn thinks_playables(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
 		let Frame { state, meta } = frame;
 
 		state.hands[player_index].iter().filter_map(|&order| {
-			let thought = &self.thoughts[order];
-
-			let known_playable = thought.possible.iter().all(|id| state.is_playable(id)) ||
-				(meta[order].status == CardStatus::CalledToPlay && thought.possible.iter().any(|id| frame.state.is_playable(id)));
-
-			if known_playable {
+			if self.order_kp(frame, order) {
 				return Some(order);
 			}
 
@@ -228,7 +215,7 @@ impl Player {
 
 			for link in &self.links {
 				match link {
-					Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => {
+					Link::Promised { orders, .. } | Link::Unpromised { orders, .. } | Link::Sarcastic { orders, .. } => {
 						if state.strikes == 2 || (orders.contains(&order) && *orders.iter().max().unwrap() != order) {
 							return None;
 						}
@@ -236,7 +223,11 @@ impl Player {
 				}
 			}
 
-			let poss = if self.player_index != state.our_player_index || state.strikes != 2 || meta[order].focused { thought.possibilities() } else { thought.possible };
+			let poss = if (self.player_index != state.our_player_index || state.strikes != 2 || meta[order].focused) && meta[order].status != CardStatus::CalledToDiscard {
+				self.thoughts[order].possibilities()
+			} else {
+				self.thoughts[order].possible
+			};
 			poss.iter().all(|id| state.is_playable(id)).then_some(order)
 		}).collect()
 	}
@@ -299,7 +290,7 @@ impl Player {
 		let mut orders = AHashSet::new();
 		for link in &self.links {
 			match link {
-				Link::Promised { orders: link_orders, id, .. } => {
+				Link::Promised { orders: link_orders, id, .. } | Link::Sarcastic { orders: link_orders, id } => {
 					if link_orders.len() > self.unknown_ids(state, *id) {
 						orders.extend(link_orders);
 					}
@@ -314,76 +305,57 @@ impl Player {
 		orders
 	}
 
-	pub fn update_hypo_stacks(&mut self, frame: &Frame, ignore: &[usize]) {
-		let Frame { state, .. } = frame;
-		let mut hypo_stacks = state.play_stacks.clone();
+	pub fn update_hypo_stacks(&mut self, frame: &Frame) {
+		let Frame { state, meta, .. } = frame;
+		let mut hypo_state = frame.state.clone();
 		let mut unknown_plays: AHashSet<usize> = AHashSet::new();
 		let mut played: AHashSet<usize> = AHashSet::new();
 		let mut unplayable: AHashSet<usize> = AHashSet::new();
 
 		let mut found_playable = true;
-		let mut good_touch_elim = IdentitySet::EMPTY;
-		let linked_orders = self.linked_orders(state);
-
-		fn delayed_playable(good_touch_elim: IdentitySet, hypo_stacks: &[usize], ids: impl Iterator<Item = Identity>) -> bool {
-			let mut remaining = ids.filter(|id| !good_touch_elim.contains(*id)).peekable();
-			remaining.peek().is_some() && remaining.all(|id| hypo_stacks[id.suit_index] + 1 == id.rank)
-		}
 
 		while found_playable {
 			found_playable = false;
 
 			for player_index in 0..state.num_players {
 				for &order in &state.hands[player_index] {
-					if ignore.contains(&order) || linked_orders.contains(&order) || played.contains(&order) || unplayable.contains(&order) {
-						continue;
-					}
-
 					let thought = &self.thoughts[order];
-					let id = thought.identity(&IdOptions { infer: true, symmetric: true });
-					let actual_id: Option<Identity> = state.deck[order].id();
 
-					if !frame.is_touched(order) || actual_id.is_some_and(|i| good_touch_elim.contains(i)) {
+					if played.contains(&order) || unplayable.contains(&order) || !state.has_consistent_inferences(thought) || !self.order_kp(&Frame::new(&hypo_state, meta), order) {
 						continue;
 					}
 
-					let playable = state.has_consistent_inferences(thought) && (
-						delayed_playable(good_touch_elim, &hypo_stacks, thought.possible.iter()) ||
-						delayed_playable(good_touch_elim, &hypo_stacks, thought.inferred.iter()) ||
-						(frame.is_blind_playing(order) && actual_id.is_some_and(|i| delayed_playable(good_touch_elim, &hypo_stacks, std::iter::once(i)))));
-
-					if !playable {
-						continue;
-					}
-
-					match id {
+					match thought.identity(&IdOptions { infer: true, symmetric: true }) {
 						None => {
 							unknown_plays.insert(order);
 							played.insert(order);
 							found_playable = true;
 
 							for link in &self.links {
-								if let Link::Promised { id, .. } = link {
-									if id.rank != hypo_stacks[id.suit_index] + 1 {
-										warn!("tried to add linked {} ({}) onto hypo stacks, but they were at {hypo_stacks:?} {:?}", state.log_id(*id), order, played);
+								let promise = match link {
+									Link::Promised { id, .. } | Link::Sarcastic { id, .. } => Some(*id),
+									_ => None
+								};
+
+								if let Some(id) = promise {
+									if id.rank != hypo_state.play_stacks[id.suit_index] + 1 {
+										warn!("tried to add linked {} ({}) onto hypo stacks, but they were at {:?} {:?}", state.log_id(id), order,hypo_state.play_stacks, played);
 										unplayable.insert(order);
 									}
 									else {
-										hypo_stacks[id.suit_index] = id.rank;
-										good_touch_elim = good_touch_elim.with(*id);
+										hypo_state.play_stacks[id.suit_index] = id.rank;
 									}
 								}
 							}
 						},
 						Some(id) => {
-							if id.rank != hypo_stacks[id.suit_index] + 1 {
-								warn!("tried to add {} ({}) onto hypo stacks, but they were at {hypo_stacks:?} {:?}", state.log_id(id), order, played);
+							if id.rank != hypo_state.play_stacks[id.suit_index] + 1 {
+								warn!("tried to add {} ({}) onto hypo stacks, but they were at {:?} {:?}", state.log_id(id), order,hypo_state.play_stacks, played);
 								unplayable.insert(order);
 							}
 							else {
 								found_playable = true;
-								hypo_stacks[id.suit_index] = id.rank;
-								good_touch_elim = good_touch_elim.with(id);
+								hypo_state.play_stacks[id.suit_index] = id.rank;
 								played.insert(order);
 							}
 						}
@@ -391,7 +363,7 @@ impl Player {
 				}
 			}
 		}
-		self.hypo_stacks = hypo_stacks;
+		self.hypo_stacks = hypo_state.play_stacks;
 		self.unknown_plays = unknown_plays;
 		self.hypo_plays = played;
 	}

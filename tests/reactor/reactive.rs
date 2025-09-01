@@ -182,6 +182,36 @@ fn it_elims_a_reactive_dc_play() {
 }
 
 #[test]
+fn it_elims_a_reactive_play_dc() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "g2", "r2", "g5", "y3"],
+		&["b1", "b5", "p2", "b3", "g4"],
+	], TestOptions {
+		play_stacks: Some(&[1, 1, 1, 0, 0]),
+		clue_tokens: Fraction::from(7),
+		starting: Player::Bob,
+		init: Box::new(|game| {
+			// Alice's slots 2 and 3 are known red.
+			pre_clue(game, Player::Alice, 2, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Cathy }]);
+			pre_clue(game, Player::Alice, 3, &[TestClue { kind: ClueKind::COLOUR, value: Colour::Red as usize, giver: Player::Cathy }]);
+		}),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Bob clues green to Alice (slot 4)");
+	take_turn(&mut game, "Cathy plays b1, drawing r4");
+
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][2]].status, CardStatus::CalledToDiscard);
+
+	// Alice's slot 1 can still be trash, since Cathy targeted clued trash.
+	assert!(game.common.thoughts[game.state.hands[Player::Alice as usize][0]].inferred.iter().any(|i| game.state.is_basic_trash(i)));
+
+	// However, ALice's slot 2 is known !trash.
+	assert!(game.common.thoughts[game.state.hands[Player::Alice as usize][1]].inferred.iter().all(|i| !game.state.is_basic_trash(i)));
+}
+
+#[test]
 fn it_reacts_to_a_reactive_finesse() {
 	let mut game = util::setup(Arc::new(Reactor), &[
 		&["xx", "xx", "xx", "xx", "xx"],

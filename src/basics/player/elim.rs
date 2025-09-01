@@ -268,7 +268,7 @@ impl Player {
 	pub fn find_links(&mut self, frame: &Frame, good_touch: bool) {
 		let Frame { state, meta } = frame;
 		let mut linked_orders: HashSet<usize> = self.links.iter().flat_map(|link| match link {
-			Link::Promised { orders, .. } | Link::Unpromised { orders, .. } => orders
+			Link::Promised { orders, .. } | Link::Unpromised { orders, .. } | Link::Sarcastic { orders, .. } => orders
 		}).cloned().collect();
 
 		let orders = &state.hands.concat();
@@ -312,9 +312,10 @@ impl Player {
 		}
 	}
 
-	pub fn refresh_links(&mut self, frame: &Frame, good_touch: bool) {
+	pub fn refresh_links(&mut self, frame: &Frame, good_touch: bool) -> Vec<usize> {
 		let Frame { state, meta } = frame;
 		let mut new_links = Vec::new();
+		let mut sarcastics = Vec::new();
 
 		for link in self.links.clone() {
 			match link {
@@ -337,6 +338,7 @@ impl Player {
 						self.thoughts[*viable_orders[0]].inferred = IdentitySet::single(id);
 					}
 					else {
+						info!("updating promised link for {} to {viable_orders:?} ({})", state.log_id(id), if self.is_common { "common" } else { &state.player_names[self.player_index] });
 						new_links.push(Link::Promised { orders: viable_orders.into_iter().cloned().collect(), id, target });
 					}
 				}
@@ -362,10 +364,31 @@ impl Player {
 					}
 					new_links.push(link);
 				}
+				Link::Sarcastic { orders, id } => {
+					// At least 1 card matches, promise resolved
+					if orders.iter().any(|&o| self.thoughts[o].is(&id)) {
+						continue;
+					}
+
+					let viable_orders = orders.iter().filter(|&o| self.thoughts[*o].possible.contains(id)).collect::<Vec<_>>();
+
+					if viable_orders.is_empty() {
+						info!("promised sarcastic id {} not found among cards {:?}, rewind?", state.log_id(id), orders)
+					}
+					else if viable_orders.len() == 1 {
+						self.thoughts[*viable_orders[0]].inferred = IdentitySet::single(id);
+						sarcastics.push(*viable_orders[0]);
+					}
+					else {
+						info!("updating sarcastic link for {} to {viable_orders:?} ({})", state.log_id(id), if self.is_common { "common" } else { &state.player_names[self.player_index] });
+						new_links.push(Link::Sarcastic { orders: viable_orders.into_iter().cloned().collect(), id });
+					}
+				}
 			}
 		}
 
 		self.links = new_links;
 		self.find_links(frame, good_touch);
+		sarcastics
 	}
 }

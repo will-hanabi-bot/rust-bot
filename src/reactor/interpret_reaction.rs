@@ -44,6 +44,10 @@ impl Reactor {
 				continue;
 			}
 
+			if state.deck[receiver_hand[target_slot - 1]].clued && !state.deck[*receive_order].clued {
+				continue;
+			}
+
 			let react_slot = Reactor::calc_slot(focus_slot, i + 1);
 			if let Some(react_order) = state.hands[reacter].get(react_slot - 1) {
 				let react_thought = &common.thoughts[*react_order];
@@ -65,6 +69,10 @@ impl Reactor {
 
 		for (i, receive_order) in receiver_hand.iter().enumerate().take(target_slot - 1) {
 			if meta[*receive_order].status == CardStatus::CalledToPlay || meta[*receive_order].status == CardStatus::CalledToDiscard {
+				continue;
+			}
+
+			if state.deck[receiver_hand[target_slot - 1]].clued && !state.deck[*receive_order].clued {
 				continue;
 			}
 
@@ -125,7 +133,7 @@ impl Reactor {
 				}
 				else if playable_reacts.len() == 1 {
 					common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i) || playable_reacts.contains(&i));
-					info!("eliminated playables except {} from slot {} {} - {}", state.log_id(*playable_reacts.first().unwrap()), i + 1, *receive_order, common.str_infs(state, *receive_order));
+					info!("eliminated playables except {} from slot {} {} - {}", state.log_id(playable_reacts[0]), i + 1, *receive_order, common.str_infs(state, *receive_order));
 				}
 				else {
 					common.thoughts[*receive_order].inferred.retain(|i| !state.is_playable(i));
