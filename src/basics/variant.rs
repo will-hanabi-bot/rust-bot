@@ -125,7 +125,7 @@ impl VariantManager {
 					if let Some(colour) = self.colours.iter().find(|colour| &colour.name == suit) {
 						let abbreviation = colour.abbreviation.clone().unwrap_or(suit[0..1].to_lowercase().to_string());
 						if !short_forms.contains(&abbreviation) {
-							abbreviation.clone()
+							abbreviation.to_lowercase().clone()
 						} else {
 							// Look for the first unused character
 							suit.to_lowercase().split("").find(|c| !short_forms.contains(&c.to_string())).unwrap_or_else(|| panic!("No unused character found for suit '{suit}' in {:?}", var.suits)).to_string()

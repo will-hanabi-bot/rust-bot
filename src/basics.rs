@@ -67,10 +67,10 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 	let Game { common, state, deck_ids, .. } = game;
 	let &DiscardAction { failed, order, player_index, suit_index, rank } = action;
 
+	state.hands[player_index].retain(|&o| o != order);
+
 	if suit_index != -1 && rank != -1 {
 		let id = Identity { suit_index: suit_index as usize, rank: rank as usize };
-
-		state.hands[player_index].retain(|&o| o != order);
 		state.discard_stacks[id.suit_index][id.rank - 1].push(order);
 
 		// Assign identity
@@ -83,6 +83,7 @@ pub fn on_discard(game: &mut Game, action: &DiscardAction) {
 		}
 
 		let thought = &mut common.thoughts[order];
+		thought.base = Some(id);
 		thought.possible = IdentitySet::single(id);
 		thought.inferred = IdentitySet::single(id);
 	}

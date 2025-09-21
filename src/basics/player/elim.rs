@@ -94,7 +94,7 @@ impl Player {
 	 */
 	fn perform_cross_elim(&mut self, state: &State, entries: &[IdEntry], ids: &IdentitySet, resets: &mut Vec<usize>) -> bool {
 		let mut changed = false;
-		let groups = entries.iter().into_group_map_by(|IdEntry { order, ..}| state.deck[*order].id());
+		let groups = entries.iter().into_group_map_by(|IdEntry { order, .. }| state.deck[*order].id());
 
 		for (id, group) in groups {
 			if let Some(id) = id {
@@ -143,18 +143,14 @@ impl Player {
 
 		// Check all remaining subsets that contain the next item
 		let item = &self.cross_elim_candidates[next_index];
-		let new_acc_ids: IdentitySet = acc_ids.union(&self.thoughts[item.order].possible);
+		let new_acc_ids = acc_ids.union(&self.thoughts[item.order].possible);
 
 		let mut next_contained = contained.clone();
 		next_contained.push(item.clone());
 
 		let mut next_certains = certains.clone();
 
-		for id in self.thoughts[item.order].possible.iter() {
-			if acc_ids.contains(id) {
-				continue;
-			}
-
+		for id in self.thoughts[item.order].possible.difference(acc_ids).iter() {
 			for MatchEntry { order, .. } in &self.certain_map[Identity::to_ord(id)] {
 				if !certains.contains(order) {
 					next_certains.push(*order);
@@ -209,17 +205,15 @@ impl Player {
 		let mut elim_candidates = Vec::new();
 		let mut resets = Vec::new();
 
-		for i in 0..state.num_players {
-			for &order in &state.hands[i] {
-				let thought = &self.thoughts[order];
+		for &order in &state.hands.concat() {
+			let thought = &self.thoughts[order];
 
-				if meta[order].trash || thought.reset ||  thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
-					continue;
-				}
+			if meta[order].trash || thought.reset || thought.identity(&IdOptions { symmetric: true, ..Default::default() }).is_some() {
+				continue;
+			}
 
-				if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !state.is_basic_trash(i)) && frame.is_touched(order) {
-					elim_candidates.push(order);
-				}
+			if !thought.inferred.is_empty() && thought.possible.iter().any(|i| !state.is_basic_trash(i)) && frame.is_touched(order) {
+				elim_candidates.push(order);
 			}
 		}
 

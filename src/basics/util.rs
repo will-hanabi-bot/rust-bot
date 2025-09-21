@@ -52,7 +52,7 @@ pub fn perform_to_action(state: &State, action: &PerformAction, player_index: us
 		}).collect::<Vec<_>>();
 
 	match action {
-		PerformAction::Play { target, .. } => {
+		PerformAction::Play { target } => {
 			match state.deck[*target].id().or_else(|| deck.and_then(|d| d[*target].id())) {
 				Some(id) =>
 					if state.is_playable(id) {
@@ -64,23 +64,23 @@ pub fn perform_to_action(state: &State, action: &PerformAction, player_index: us
 				None => Action::discard(player_index, *target, -1, -1, true)
 			}
 		},
-		PerformAction::Discard { target, .. } => {
+		PerformAction::Discard { target } => {
 			match state.deck[*target].id().or_else(|| deck.and_then(|d| d[*target].id())) {
 				Some(id) => Action::discard(player_index, *target, id.suit_index as i32, id.rank as i32, false),
 				None => Action::discard(player_index, *target, -1, -1, false)
 			}
 		},
-		PerformAction::Colour { target, value, .. } => {
+		PerformAction::Colour { target, value } => {
 			let clue = BaseClue { kind: ClueKind::COLOUR, value: *value };
 			let list = clue_touched(&state.hands[*target], &clue);
 			Action::clue(player_index, *target, clue, list)
 		},
-		PerformAction::Rank { target, value, .. } => {
+		PerformAction::Rank { target, value } => {
 			let clue = BaseClue { kind: ClueKind::RANK, value: *value };
 			let list = clue_touched(&state.hands[*target], &clue);
 			Action::clue(player_index, *target, clue, list)
 		},
-		PerformAction::Terminate { target, value, .. } => {
+		PerformAction::Terminate { target, value } => {
 			Action::GameOver(GameOverAction { end_condition: *value, player_index: *target })
 		},
 	}

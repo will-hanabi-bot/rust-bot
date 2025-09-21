@@ -52,8 +52,9 @@ pub fn connectable_simple(game: &Game, player: &Player, start: usize, target: us
 
 		// Simulate playing the card
 		if let Some(play_id) = play_id {
-			let mut new_game = game.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32), None);
-			new_game = new_game.simulate_action(&Action::turn(state.turn_count, next_player_index as i32), None);
+			let new_game = game
+				.simulate_action(&Action::play(start, order, play_id.suit_index as i32, play_id.rank as i32), None)
+				.simulate_action(&Action::turn(state.turn_count, next_player_index as i32), None);
 
 			let play_connectables = connectable_simple(&new_game, player, next_player_index, target, id);
 

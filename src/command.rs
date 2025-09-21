@@ -12,7 +12,7 @@ use crate::websocket::{send_chat, send_cmd, send_pm};
 use crate::basics::{action::Action, game::Game, state::State, variant::VariantManager};
 use crate::console::{DebugCommand, NavArg};
 
-const BOT_VERSION: &str = "v1.0.0 (rust-bot)";
+const BOT_VERSION: &str = "v1.0.1 (rust-bot)";
 
 #[derive(Deserialize)]
 struct ChatMessage {
@@ -301,7 +301,7 @@ impl BotClient {
 
 	pub fn leave_room(&mut self) {
 		let cmd = if self.game_started { "tableUnattend" } else { "tableLeave" };
-		send_cmd(&self.ws, cmd, &json!({ "tableID": self.table_id }).to_string());
+		send_cmd(&self.ws, cmd, &json!({ "tableID": self.table_id.unwrap() }).to_string());
 
 		self.table_id = None;
 		self.game = None;
@@ -364,6 +364,7 @@ impl BotClient {
 		if msg.starts_with("/rejoin") {
 			if self.game.is_some() {
 				send_pm(&self.ws, who, "Could not rejoin, as the bot is already in a game.");
+				return;
 			}
 
 			let table = &self.tables.values().filter(|table|

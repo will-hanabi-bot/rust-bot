@@ -7,6 +7,7 @@ use crate::basics;
 use crate::basics::action::{Action, ClueAction};
 use crate::basics::card::{CardStatus, Identifiable, Identity, IdOptions};
 use crate::basics::clue::{Clue, ClueKind};
+use crate::basics::game::frame::Frame;
 use crate::basics::game::Game;
 use crate::basics::identity_set::IdentitySet;
 use crate::basics::player::WaitingConnection;
@@ -121,22 +122,24 @@ impl Reactor {
 
 		let Game { state, common, .. } = &game;
 		let frame = game.frame();
-		let prev_playables = prev.common.obvious_playables(&prev.frame(), *target).into_iter().chain(connectable_simple(prev, &prev.players[*giver], state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
-		let playables = common.obvious_playables(&frame, *target).into_iter().chain(connectable_simple(game, &game.players[*giver], state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
+		let prev_playables = prev.common.obvious_playables(&prev.frame(), *target).into_iter()
+			.chain(connectable_simple(prev, &prev.players[*giver], state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
+		let playables = common.obvious_playables(&frame, *target).into_iter()
+			.chain(connectable_simple(game, &game.players[*giver], state.next_player_index(*giver), *target, None)).unique().collect::<Vec<_>>();
 
 		info!("playables {playables:?}, prev_playables {prev_playables:?}");
 
 		// Fill-in or hard burn is legal only in a stalling situation
 		if newly_touched.is_empty() {
 			let safe_actions = playables.into_iter().chain(common.thinks_trash(&frame, *target)).collect::<Vec<_>>();
-			let old_safe_actions = prev_playables.into_iter().chain(prev.common.thinks_trash(&frame, *target)).collect::<Vec<_>>();
+			let old_safe_actions = prev_playables.into_iter().chain(prev.common.thinks_trash(&prev.frame(), *target)).collect::<Vec<_>>();
 
 			if safe_actions.iter().any(|o| !old_safe_actions.contains(o)) {
 				info!("revealed a safe action!");
 				return Some(ClueInterp::Reveal);
 			}
 			if stall {
-				info!("stalling with fill-in/hard-burn!");
+				info!("stalling with fill-in/hard burn!");
 				return Some(ClueInterp::Stall);
 			}
 			warn!("looked like fill-in/hard burn outside of a stalling situation!");
@@ -172,7 +175,7 @@ impl Reactor {
 	}
 
 	/**
-	 * Returns true if there exists a non-bad touching ref play clue or a ref dc clue on trash to the clue target instead.
+	 * Returns a non-bad touching ref play clue or a ref dc clue on trash to the clue target, if it exists.
 	 */
 	fn alternative_clue(game: &Game, clue_target: usize, play_only: bool) -> Option<Clue>{
 		let Game { common, state,  .. } = game;
@@ -228,10 +231,6 @@ impl Reactor {
 		let Game { common, state, meta, .. } = game;
 		let ClueAction { target, .. } = action;
 
-		if *interp == ClueInterp::Illegal {
-			return false;
-		}
-
 		if *interp == ClueInterp::Mistake {
 			return true;
 		}
@@ -241,12 +240,15 @@ impl Reactor {
 			return true;
 		}
 
-		if *target == game.state.our_player_index {
+		if *target == state.our_player_index {
 			return false;
 		}
 
 		let bad_playable = state.hands[*target].iter().find(|&&o|
-			meta[o].status == CardStatus::CalledToPlay && prev.meta[o].status != CardStatus::CalledToPlay && !game.state.has_consistent_inferences(&common.thoughts[o]));
+			meta[o].status == CardStatus::CalledToPlay &&
+			prev.meta[o].status != CardStatus::CalledToPlay &&
+			!game.state.has_consistent_inferences(&common.thoughts[o])
+		);
 
 		if let Some(bad) = bad_playable {
 			warn!("bad playable on {bad} {}!", state.log_iden(&state.deck[*bad]));
@@ -254,9 +256,10 @@ impl Reactor {
 		}
 
 		let bad_discard = state.hands[*target].iter().find(|&&o|
-			meta[o].status == CardStatus::CalledToDiscard && prev.meta[o].status != CardStatus::CalledToDiscard &&
+			meta[o].status == CardStatus::CalledToDiscard &&
+			prev.meta[o].status != CardStatus::CalledToDiscard &&
 			(state.is_critical(state.deck[o].id().unwrap()) ||
-				(stall && !state.is_basic_trash(state.deck[o].id().unwrap()) && Reactor::alternative_clue(game, *target, false).is_some()))
+				(stall && !state.is_basic_trash(state.deck[o].id().unwrap()) && Reactor::alternative_clue(prev, *target, false).is_some()))
 		);
 
 		if let Some(bad) = bad_discard {
@@ -320,22 +323,29 @@ impl Reactor {
 		let Game { common, state, meta, .. } = game;
 
 		// Update play stacks to the reacter's turn
-		let mut play_stacks = state.play_stacks.clone();
+		let mut hypo_state = prev.state.clone();
 		for i in players_upto(state.num_players, state.next_player_index(*giver), reacter) {
-			let mut playables = prev.common.obvious_playables(&prev.frame(), i);
+			let mut playables = prev.common.obvious_playables(&Frame::new(&hypo_state, &prev.meta), i);
 			if let Some(urgent) = playables.iter().find(|&&o| meta[o].urgent) {
 				playables = vec![*urgent];
 			}
 
-			if let Some(order) = playables.first() && let Some(id) = state.deck[*order].id() {
-				play_stacks[id.suit_index] += 1;
+			if let Some(order) = playables.first() && let Some(id) = state.deck[*order].id() && hypo_state.play_stacks[id.suit_index] + 1 == id.rank {
+				hypo_state.play_stacks[id.suit_index] += 1;
+			}
+		}
+
+		// The receiver can also play their own known playables first
+		for self_playable in prev.common.obvious_playables(&Frame::new(&hypo_state, &prev.meta), *receiver) {
+			if let Some(id) = state.deck[self_playable].id() && hypo_state.play_stacks[id.suit_index] + 1 == id.rank {
+				hypo_state.play_stacks[id.suit_index] += 1;
 			}
 		}
 
 		match clue.kind {
 			ClueKind::COLOUR => {
 				let play_targets = state.hands[*receiver].iter().enumerate()
-					.filter(|&(_, o)| meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| play_stacks[i.suit_index] + 1 == i.rank))
+					.filter(|&(_, o)| meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| hypo_state.play_stacks[i.suit_index] + 1 == i.rank))
 					.sorted_by_key(|&(i, o)|
 						// Unclued dupe, with a clued dupe
 						if !prev.state.deck[*o].clued && state.hands[*receiver].iter().any(|o2| o2 < o && prev.state.deck[*o2].clued && state.deck[*o].is(&state.deck[*o2])) {
@@ -373,7 +383,7 @@ impl Reactor {
 				}
 
 				// Didn't work, so target trash
-				let prev_kt = prev.common.thinks_trash(&prev.frame(), *receiver);
+				let prev_kt = prev.players[*giver].thinks_trash(&prev.frame(), *receiver);
 
 				let mut targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
 					!prev_kt.contains(o) &&
@@ -391,18 +401,26 @@ impl Reactor {
 				)
 				.collect::<Vec<_>>();
 
+				// Add known trash targets
+				if targets.is_empty() {
+					targets.extend(state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
+						state.is_basic_trash(state.deck[*o].id().unwrap())
+					));
+				}
+
 				// Add sacrifice discard targets
 				if targets.is_empty() {
 					targets.extend(state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
 						!prev_kt.contains(o) && !state.is_critical(state.deck[*o].id().unwrap())
-					).sorted_by_key(|(_, o)|
-						-common.playable_away(state.deck[**o].id().unwrap())
-					));
+					).sorted_by_key(|(_, o)| {
+						let id = state.deck[**o].id().unwrap();
+						-common.playable_away(id) * 10 + (5 - id.rank as i32)
+					}));
+				}
 
-					if targets.is_empty() {
-						warn!("reactive clue but receiver had no playable, trash or sacrifice targets!");
-						return None;
-					}
+				if targets.is_empty() {
+					warn!("reactive clue but receiver had no playable, trash or sacrifice targets!");
+					return None;
 				}
 
 				for (index, target) in targets {
@@ -440,7 +458,7 @@ impl Reactor {
 			}
 			ClueKind::RANK => {
 				let play_targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-					meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| play_stacks[i.suit_index] + 1 == i.rank)
+					meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| hypo_state.play_stacks[i.suit_index] + 1 == i.rank)
 				).sorted_by_key(|(i, o)| {
 					// Do not target an unclued copy when there is a clued copy
 					let unclued_dupe = !prev.state.deck[**o].clued && state.hands[*receiver].iter().any(|o2| &o2 != o && prev.state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2]));
@@ -503,7 +521,10 @@ impl Reactor {
 							return None;
 						}
 
-						if !common.thoughts[react_order].possible.iter().any(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i)) {
+						let unplayable = !common.thoughts[react_order].possible.iter().any(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i)) ||
+							!common.thoughts[react_order].possible.contains(state.deck[receive_order].id().unwrap().prev());
+
+						if unplayable {
 							warn!("reaction would involve playing unplayable {} {react_order}!", state.log_iden(&state.deck[react_order]));
 							continue;
 						}
@@ -581,7 +602,6 @@ impl Reactor {
 		let holder = game.state.holder_of(target);
 		let possible_conns = Reactor::delayed_plays(game, *giver, holder);
 
-
 		let Game { common, state, .. } = game;
 		let new_inferred = common.thoughts[target].inferred.filter(|i| state.is_playable(i) || possible_conns.iter().any(|p| p.1 == i));
 
@@ -626,8 +646,6 @@ impl Reactor {
 			} else { None };
 			return interp;
 		}
-
-		game.common.thoughts[target].info_lock = Some(new_inferred);
 
 		let Game { common, state, .. } = game;
 		let meta = &mut game.meta[target];

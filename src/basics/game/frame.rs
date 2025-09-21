@@ -21,7 +21,7 @@ impl<'a> Frame<'a> {
 		let Frame { state, meta } = self;
 		let ConvData { status, .. } = meta[order];
 
-		!state.deck[order].clued && (status == CardStatus::CalledToPlay)
+		!state.deck[order].clued && status == CardStatus::CalledToPlay
 	}
 
 	pub fn get_note(&self, common: &Player, order: usize) -> String {

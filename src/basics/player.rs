@@ -177,15 +177,17 @@ impl Player {
 
 	pub fn order_kp(&self, frame: &Frame, order: usize) -> bool {
 		let Frame { state, meta } = frame;
+		let thought = &self.thoughts[order];
 		match meta[order].status {
 			CardStatus::CalledToPlay =>
-				self.thoughts[order].possible.iter().any(|id| frame.state.is_playable(id)) &&
-				self.thoughts[order].info_lock.is_none_or(|ids| ids.iter().any(|i| frame.state.is_playable(i))),
+				thought.possible.iter().any(|id| frame.state.is_playable(id)) &&
+				thought.info_lock.is_none_or(|ids| ids.iter().any(|i| frame.state.is_playable(i))),
 
-			CardStatus::Sarcastic | CardStatus::GentlemansDiscard => self.thoughts[order].inferred.iter().all(|id| state.is_playable(id)),
+			CardStatus::Sarcastic | CardStatus::GentlemansDiscard =>
+				thought.inferred.iter().all(|id| state.is_playable(id)),
 
-			_ => self.thoughts[order].possible.iter().all(|id| state.is_playable(id)) ||
-				self.thoughts[order].info_lock.is_some_and(|ids| ids.iter().all(|id| state.is_playable(id)))
+			_ => thought.possible.iter().all(|id| state.is_playable(id)) ||
+				thought.info_lock.is_some_and(|ids| ids.iter().all(|id| state.is_playable(id)))
 		}
 	}
 
@@ -243,7 +245,7 @@ impl Player {
 	}
 
 	pub fn safe_actions(&self, frame: &Frame, player_index: usize) -> Vec<usize> {
-		self.obvious_playables(frame, player_index).iter().chain(self.thinks_trash(frame, player_index).iter()).copied().collect::<Vec<_>>()
+		self.obvious_playables(frame, player_index).iter().chain(self.thinks_trash(frame, player_index).iter()).unique().copied().collect::<Vec<_>>()
 	}
 
 	pub fn thinks_loaded(&self, frame: &Frame, player_index: usize) -> bool {
@@ -281,8 +283,7 @@ impl Player {
 	}
 
 	pub fn unknown_ids(&self, state: &State, id: Identity) -> usize {
-		let visible_count: usize = state.hands.iter().map(|hand|
-			hand.iter().filter(|&&o| self.thoughts[o].is(&id)).count()).sum();
+		let visible_count = state.hands.concat().iter().filter(|&&o| self.thoughts[o].is(&id)).count();
 		state.card_count(id) - state.base_count(id) - visible_count
 	}
 
@@ -339,11 +340,12 @@ impl Player {
 
 								if let Some(id) = promise {
 									if id.rank != hypo_state.play_stacks[id.suit_index] + 1 {
-										warn!("tried to add linked {} ({}) onto hypo stacks, but they were at {:?} {:?}", state.log_id(id), order,hypo_state.play_stacks, played);
+										warn!("tried to add linked {} ({}) onto hypo stacks, but they were at {:?} {:?}", state.log_id(id), order, hypo_state.play_stacks, played);
 										unplayable.insert(order);
 									}
 									else {
 										hypo_state.play_stacks[id.suit_index] = id.rank;
+										played.insert(order);
 									}
 								}
 							}

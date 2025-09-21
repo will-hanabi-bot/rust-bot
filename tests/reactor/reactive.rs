@@ -351,3 +351,25 @@ fn it_shifts_a_reaction() {
 	// Bob's slot 1 should still be allowed to be b1.
 	assert!(game.common.thoughts[game.state.hands[Player::Bob as usize][0]].inferred.contains(game.state.expand_short("b1")));
 }
+
+#[test]
+fn it_targets_a_self_connection() {
+	let mut game = util::setup(Arc::new(Reactor), &[
+		&["xx", "xx", "xx", "xx", "xx"],
+		&["b1", "r5", "b2", "b3", "g4"],
+		&["g5", "g2", "r2", "b1", "y3"],
+	], TestOptions {
+		clue_tokens: Fraction::from(7),
+		starting: Player::Cathy,
+		init: Box::new(|game| {
+			// Bob's slot 1 is known 1.
+			pre_clue(game, Player::Bob, 1, &[TestClue { kind: ClueKind::RANK, value: 1, giver: Player::Alice }]);
+		}),
+		..TestOptions::default()
+	});
+
+	take_turn(&mut game, "Cathy clues red to Bob");
+
+	// Alice's slot 4 is called to discard (4 + 3 = 2)
+	assert_eq!(game.meta[game.state.hands[Player::Alice as usize][3]].status, CardStatus::CalledToDiscard);
+}

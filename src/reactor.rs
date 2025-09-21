@@ -22,7 +22,7 @@ pub struct Reactor;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 pub enum ClueInterp {
-	Illegal, Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Fix, Reclue, Stall
+	Mistake, Reactive, RefPlay, RefDiscard, Lock, Reveal, Fix, Stall
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
@@ -130,6 +130,10 @@ impl Convention for Reactor {
 				}
 			}
 		};
+
+		if interp.is_none() {
+			warn!("interpreted mistake!");
+		}
 
 		game.last_move = Some(Interp::Reactor(ReactorInterp::Clue(interp.unwrap_or(ClueInterp::Mistake))));
 

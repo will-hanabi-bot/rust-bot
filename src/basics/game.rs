@@ -133,11 +133,11 @@ impl Game {
 	}
 
 	pub fn me(&self) -> &Player {
-		&self.players[self.state.current_player_index]
+		&self.players[self.state.our_player_index]
 	}
 
 	pub fn me_mut(&mut self) -> &mut Player {
-		&mut self.players[self.state.current_player_index]
+		&mut self.players[self.state.our_player_index]
 	}
 
 	pub fn handle_action(&mut self, action: &Action) {
@@ -333,7 +333,7 @@ impl Game {
 		let mut new_game = self.blank(false);
 		let actions = &self.state.action_list;
 
-		if turn == 1 && new_game.state.our_player_index == 0 {
+		if turn == 1 && self.state.our_player_index == 0 {
 			for action in actions.concat().iter().take_while(|action| matches!(action, Action::Draw(_))) {
 				if matches!(action, Action::Interp(_)) {
 					continue;
@@ -363,7 +363,7 @@ impl Game {
 
 		new_game.catchup = self.catchup;
 
-		if !new_game.catchup && new_game.state.current_player_index == new_game.state.our_player_index {
+		if !new_game.catchup && new_game.state.current_player_index == self.state.our_player_index {
 			let perform = new_game.take_action();
 			info!("{}", format!("Suggested action: {}", perform.fmt(&new_game)).blue());
 		}
@@ -377,9 +377,8 @@ impl Game {
 		for order in state.hands.concat() {
 			let frame = Frame::new(state, meta);
 			let card = &state.deck[order];
-			let meta = &meta[order];
 
-			if !card.clued && meta.status == CardStatus::None {
+			if !card.clued && meta[order].status == CardStatus::None {
 				continue;
 			}
 
@@ -402,11 +401,8 @@ impl Game {
 				}
 			}
 
-			let prev_note = notes.get(&(order as u64));
-			let write_note = match prev_note {
-				Some(prev_note) => note != prev_note.last && state.turn_count > prev_note.turn,
-				None => true
-			};
+			let write_note = notes.get(&(order as u64)).is_none_or(|prev|
+				note != prev.last && state.turn_count > prev.turn);
 
 			if write_note {
 				let prev_note = notes.remove(&(order as u64));

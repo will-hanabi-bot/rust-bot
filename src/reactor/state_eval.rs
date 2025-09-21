@@ -45,7 +45,7 @@ impl Reactor {
 		}
 
 		if let Some(Interp::Reactor(ReactorInterp::Clue(last_move))) = &hypo.last_move {
-			if (last_move == &ClueInterp::RefPlay || last_move == &ClueInterp::Reclue) && playables.is_empty() && !state.in_endgame() {
+			if last_move == &ClueInterp::RefPlay && playables.is_empty() && !state.in_endgame() {
 				warn!("clue {} looks like {:?} but gets no playables!", clue.fmt(state, *target), last_move);
 				return -100.0;
 			}
@@ -159,7 +159,7 @@ impl Reactor {
 				let locked_dc = game.players[player_index].locked_discard(state, player_index);
 				let id = state.deck[locked_dc].id().unwrap();
 				let action = Action::discard(player_index, locked_dc, id.suit_index as i32, id.rank as i32, false);
-				info!("locked discard!");
+				info!("locked discard! {locked_dc}");
 				Reactor::advance(&Reactor::advance_game(game, &action), offset + 1)
 			}
 			else {
@@ -248,7 +248,7 @@ impl Reactor {
 
 		let value = match action {
 			Action::Clue(clue) => {
-				if matches!(hypo_game.last_move, Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake))) | Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Illegal)))) {
+				if matches!(hypo_game.last_move, Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake)))) {
 					return -100.0;
 				}
 

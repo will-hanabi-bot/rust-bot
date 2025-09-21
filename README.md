@@ -6,11 +6,11 @@ It only plays with [Reactor 1.0 conventions](https://hanabi.wiki/en/conventions/
 
 ## Bot features
 
-- Supports all the basic variants (Black, Rainbow, Prism, Pink, Brown + their blends), Critical Fours, and Clue Starved.
+- Supports all the basic variants (Black, Rainbow, White, Prism, Pink, Brown + blends), Critical Fours, and Clue Starved.
 - Takes notes during the game on what it thinks each player knows about their own hand.
 - Can replay completed games on hanab.live and offer suggested actions.
 
-This was mainly an experiment to see if Rust was a good language for me (it isn't), so feature parity with my other bot is very unlikely.
+This was mainly an experiment to see if Rust was a good language for me (it isn't), so future development will be limited.
 
 ## Running locally
 

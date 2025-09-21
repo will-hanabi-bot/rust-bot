@@ -262,22 +262,21 @@ impl PerformAction {
 		let Game { common, state, .. } = game;
 
 		match self {
-			PerformAction::Play { target, .. } => {
+			PerformAction::Play { target } => {
 				let slot = state.our_hand().iter().position(|o| o == target).unwrap() + 1;
-
 				format!("Play slot {}, inferences {}", slot, common.str_infs(state, *target))
 			}
-			PerformAction::Discard { target, .. } => {
+			PerformAction::Discard { target } => {
 				let slot = state.our_hand().iter().position(|o| o == target).unwrap() + 1;
 				format!("Discard slot {}, inferences {}", slot, common.str_infs(state, *target))
 			}
-			PerformAction::Colour { target, value, .. } => {
+			PerformAction::Colour { target, value } => {
 				(Clue { kind: ClueKind::COLOUR, value: *value, target: *target }).fmt(state)
 			}
-			PerformAction::Rank { target, value, .. } => {
+			PerformAction::Rank { target, value } => {
 				(Clue { kind: ClueKind::RANK, value: *value, target: *target }).fmt(state)
 			}
-			PerformAction::Terminate { target, value, .. } => {
+			PerformAction::Terminate { target, value } => {
 				format!("Game ended: {target} {value}")
 			}
 		}
