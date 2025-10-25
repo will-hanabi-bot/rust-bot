@@ -1,5 +1,7 @@
 # rust-bot
 
+**NOTE:** This was mainly an experiment to see if Rust was a good language for me (it isn't). This project is now succeeded by [scala-bot](https://github.com/will-hanabi-bot/scala-bot) and is no longer under active development.
+
 A deterministic Rust bot that plays on the [hanab.live](https://hanab.live/) interface. Basic structure and ideas were taken from [Zamiell's example bot](https://github.com/Zamiell/hanabi-live-bot) (Python). Fork of my [more-developed bot](https://github.com/will-hanabi-bot/hanabi-bot) (JavaScript).
 
 It only plays with [Reactor 1.0 conventions](https://hanabi.wiki/en/conventions/reactor). Just like my other bot, it does not do any "learning" during the game.
@@ -10,8 +12,6 @@ It only plays with [Reactor 1.0 conventions](https://hanabi.wiki/en/conventions/
 - Takes notes during the game on what it thinks each player knows about their own hand.
 - Can replay completed games on hanab.live and offer suggested actions.
 
-This was mainly an experiment to see if Rust was a good language for me (it isn't), so future development will be limited.
-
 ## Running locally
 
 - You'll need to have Rust and cargo (Rust's package manager) installed. There are instructions [here](https://www.rust-lang.org/tools/install).
@@ -21,8 +21,8 @@ This was mainly an experiment to see if Rust was a good language for me (it isn'
   - You'll need to create its account on hanab.live first.
 - Run `cargo run --release --bin main -- index=<index>` to start the bot.
 - Debug logs will show up in the console, providing more information about what the bot thinks about every action.
-- `hand <playerName> [observerIndex]` will display the information on that player's hand from a particular perspective.
-        - If no observer index is provided, the hand will be logged from the common knowledge perspective.
+	- `hand <playerName> [observerName]` will display the information on that player's hand from a particular perspective.
+        - If no observer name is provided, the hand will be logged from the common knowledge perspective.
 
 ## Supported commands
 

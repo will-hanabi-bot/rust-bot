@@ -94,7 +94,7 @@ fn it_reacts_to_a_reverse_reactive_play_play() {
 fn it_elims_a_reactive_play_play() {
 	let mut game = util::setup(Arc::new(Reactor), &[
 		&["xx", "xx", "xx", "xx", "xx"],
-		&["b1", "g2", "r2", "y3", "g5"],
+		&["r1", "g2", "r2", "y3", "g5"],
 		&["g3", "b5", "p2", "b1", "g4"],
 	], TestOptions {
 		init: Box::new(|game| {
@@ -111,7 +111,7 @@ fn it_elims_a_reactive_play_play() {
 
 	assert_eq!(game.meta[game.state.hands[Player::Bob as usize][0]].status, CardStatus::CalledToPlay);
 
-	take_turn(&mut game, "Bob plays b1, drawing p1");
+	take_turn(&mut game, "Bob plays r1, drawing p1");
 	assert_eq!(game.meta[game.state.hands[Player::Cathy as usize][3]].status, CardStatus::CalledToPlay);
 
 	// Since Bob cannot play a known 3, Cathy can't write !playable on slot 1.

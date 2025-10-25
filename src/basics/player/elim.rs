@@ -339,7 +339,9 @@ impl Player {
 				Link::Unpromised { ref orders, ref ids } => {
 					let revealed = orders.iter().filter(|&&o| {
 						let thought = &self.thoughts[o];
-						thought.id().is_some() || ids.iter().any(|i| !thought.possible.contains(*i))
+						thought.id().is_some() ||
+						ids.iter().any(|i| !thought.possible.contains(*i)) ||
+						state.hands.concat().contains(&o)	// An unknown card was played/discarded hypothetically; in hypo, we would know what it is
 					}).collect::<Vec<_>>();
 
 					if !revealed.is_empty() {
@@ -374,7 +376,9 @@ impl Player {
 						sarcastics.push(*viable_orders[0]);
 					}
 					else {
-						info!("updating sarcastic link for {} to {viable_orders:?} ({})", state.log_id(id), if self.is_common { "common" } else { &state.player_names[self.player_index] });
+						if viable_orders.len() != orders.len() || orders.iter().any(|o| !viable_orders.contains(&o)) {
+							info!("updating sarcastic link for {} to {viable_orders:?} ({})", state.log_id(id), if self.is_common { "common" } else { &state.player_names[self.player_index] });
+						}
 						new_links.push(Link::Sarcastic { orders: viable_orders.into_iter().cloned().collect(), id });
 					}
 				}

@@ -12,7 +12,7 @@ use crate::websocket::{send_chat, send_cmd, send_pm};
 use crate::basics::{action::Action, game::Game, state::State, variant::VariantManager};
 use crate::console::{DebugCommand, NavArg};
 
-const BOT_VERSION: &str = "v1.0.1 (rust-bot)";
+const BOT_VERSION: &str = "v1.0.2 (rust-bot)";
 
 #[derive(Deserialize)]
 struct ChatMessage {

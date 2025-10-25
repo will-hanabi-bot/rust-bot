@@ -97,7 +97,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 			continue;
 		}
 
-		for (i, hand) in state.hands.iter().enumerate() {
+		'outer: for (i, hand) in state.hands.iter().enumerate() {
 			for &o in hand {
 				let duplicated = (prev.frame().is_touched(o) || game.frame().is_touched(o)) &&
 					game.me().thoughts[o].matches(&state.deck[order], &MatchOptions { infer: true, ..Default::default() }) &&
@@ -105,6 +105,7 @@ pub fn bad_touch_result(prev: &Game, game: &Game, giver: usize, target: usize) -
 
 				if duplicated {
 					bad_touch.push(order);
+					break 'outer;
 				}
 			}
 		}

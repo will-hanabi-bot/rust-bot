@@ -38,9 +38,9 @@ pub enum ReactorInterp {
 
 impl Reactor {
 	fn check_missed(game: &mut Game, player_index: usize, action_order: usize) {
-		let Game { state, meta, common, .. } = game;
+		let Game { state, common, .. } = game;
 
-		if let Some(urgent) = state.hands[player_index].iter().find(|&&o| meta[o].urgent) && action_order != *urgent {
+		if let Some(urgent) = state.hands[player_index].iter().find(|&&o| game.meta[o].urgent) && action_order != *urgent {
 			let meta = &mut game.meta[*urgent];
 			warn!("removing status on {urgent}, didn't react appropriately");
 			meta.clear();
@@ -48,7 +48,7 @@ impl Reactor {
 				meta.reasoning.push(state.turn_count);
 			}
 
-			common.thoughts[*urgent].inferred = common.thoughts[*urgent].old_inferred.unwrap_or_else(|| panic!("no old_inferred on {urgent}!"));
+			common.thoughts[*urgent].inferred = common.thoughts[*urgent].old_inferred.unwrap_or_else(|| panic!("no old inferred on {urgent}!"));
 			common.thoughts[*urgent].old_inferred = None;
 		}
 	}
@@ -173,7 +173,7 @@ impl Convention for Reactor {
 	}
 
 	fn interpret_discard(&self, prev: &Game, game: &mut Game, action: &DiscardAction) {
-		let DiscardAction { player_index, order, failed, suit_index, rank, .. } = action;
+		let DiscardAction { player_index, order, failed, suit_index, rank } = action;
 		let id = Identity { suit_index: *suit_index as usize, rank: *rank as usize };
 		Reactor::check_missed(game, *player_index, *order);
 
@@ -309,7 +309,7 @@ impl Convention for Reactor {
 
 		let cant_discard = state.clue_tokens == Fraction::from(8) ||
 			(state.pace() == 0 && (num_clues > 0 || num_plays > 0)) ||
-			(num_plays > 0 && game.common.waiting.as_ref().is_some_and(|w| w.reacter == state.next_player_index(state.our_player_index)));	// If we have a play and there's a potential inversion
+			(num_plays > 0 && common.waiting.as_ref().is_some_and(|w| w.reacter == state.next_player_index(state.our_player_index)));	// If we have a play and there's a potential inversion
 		info!("can discard: {}", !cant_discard);
 
 		let all_discards = if cant_discard { Vec::new() } else {
@@ -394,12 +394,11 @@ impl Convention for Reactor {
 
 			for clue in state.all_valid_clues(i) {
 				let base_clue = clue.to_base();
-				let list = state.clue_touched(&state.hands[clue.target], &base_clue);
+				let list = state.clue_touched(&state.hands[i], &base_clue);
 
-				let action = ClueAction { giver, target: clue.target, list, clue: base_clue };
-				let touched = state.clue_touched(&state.hands[clue.target], &base_clue);
+				let action = ClueAction { giver, target: i, list, clue: base_clue };
 				// Do not simulate clues that touch only previously-clued trash
-				if touched.iter().all(|&o| state.deck[o].clued && state.is_basic_trash(state.deck[o].id().unwrap())) {
+				if action.list.iter().all(|&o| state.deck[o].clued && state.is_basic_trash(state.deck[o].id().unwrap())) {
 					continue;
 				}
 				info!("{}", format!("===== Predicting value for {} =====", clue.fmt(state)).green());
@@ -421,7 +420,9 @@ impl Convention for Reactor {
 		let Game { common, state, .. } = game;
 		let trash = common.discardable(&game.frame(), player_index);
 
-		let target = trash.first().or_else(|| Reactor::chop(game, player_index)).copied().unwrap_or_else(|| game.players[player_index].locked_discard(state, player_index));
+		let target = trash.first()
+			.or_else(|| Reactor::chop(game, player_index)).copied()
+			.unwrap_or_else(|| game.players[player_index].locked_discard(state, player_index));
 		vec![PerformAction::Discard { target }]
 	}
 }

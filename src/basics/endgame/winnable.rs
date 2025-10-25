@@ -49,11 +49,7 @@ impl EndgameSolver {
 
 		let void_players = (0..state.num_players).filter(|&i|
 			state.hands[i].iter().all(|o| {
-				let card = &state.deck[*o];
-				match card.id() {
-					None => true,
-					Some(id) => state.is_basic_trash(id)
-				}
+				state.deck[*o].id().is_none_or(|id| state.is_basic_trash(id))
 			})
 		).collect::<Vec<_>>();
 
@@ -342,7 +338,7 @@ impl EndgameSolver {
 		};
 
 		match action {
-			PerformAction::Play { target, .. } => {
+			PerformAction::Play { target } => {
 				match &state.deck[*target].id() {
 					None => new_state.strikes += 1,
 					Some(id) => {
@@ -361,7 +357,7 @@ impl EndgameSolver {
 				}
 				remove_and_draw_new(&mut new_state, player_index, *target);
 			}
-			PerformAction::Discard { target, .. } => {
+			PerformAction::Discard { target } => {
 				if let Some(id) = state.deck[*target].id() {
 					new_state.discard_stacks[id.suit_index][id.rank - 1].push(*target);
 				}
@@ -369,7 +365,7 @@ impl EndgameSolver {
 				new_state.regain_clue();
 				remove_and_draw_new(&mut new_state, player_index, *target);
 			}
-			PerformAction::Colour { .. } | PerformAction::Rank {.. } => {
+			PerformAction::Colour { .. } | PerformAction::Rank { .. } => {
 				new_state.clue_tokens -= 1;
 				new_state.endgame_turns = new_state.endgame_turns.map(|turns| turns - 1);
 			}

@@ -25,8 +25,8 @@ impl Reactor {
 				}
 				else {
 					warn!("discarded useful {} but dupe was in their own hand!", state.log_id(id));
-					return DiscardInterp::None;
 				}
+				return DiscardInterp::None;
 			}
 
 			if gd {

@@ -82,7 +82,7 @@ impl Reactor {
 			hypo.last_move
 		);
 
-		let mut value: f32 = good_touch
+		let value: f32 = good_touch
 			+ (playables.len() as f32 - 2.0*duped_playables as f32)
 			+ 0.2 * untouched_plays as f32
 			+ if state.in_endgame() { 0.01 } else { 0.1 } * revealed_trash as f32
@@ -91,13 +91,11 @@ impl Reactor {
 			+ 0.1 * bad_touch.len() as f32;
 
 		match hypo.last_move {
-			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake))) => value -= 10.0,
-			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Fix))) => value += 1.0,
-			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Reactive))) => value += 1.0,
-			_ => ()
+			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Mistake))) => value - 10.0,
+			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Fix))) => value + 1.0,
+			Some(Interp::Reactor(ReactorInterp::Clue(ClueInterp::Reactive))) => value + 1.0,
+			_ => value
 		}
-
-		value
 	}
 
 	fn advance_game(game: &Game, action: &Action) -> Game {
@@ -283,8 +281,8 @@ impl Reactor {
 
 	fn eval_state(state: &State) -> f32 {
 		// The first 2 * (# suits) pts are worth 2.
-		let mut score_val = std::cmp::min(state.score(), 2 * state.variant.suits.len()) as f32;
-		score_val += state.score() as f32;
+		let score_val = std::cmp::min(state.score(), 2 * state.variant.suits.len()) as f32
+			+ state.score() as f32;
 
 		let clues: f32 = state.clue_tokens.try_into().unwrap();
 
@@ -324,7 +322,8 @@ impl Reactor {
 			return 100.0;
 		}
 
-		value += Reactor::eval_state(state);
+		let state_val = Reactor::eval_state(state);
+		value += state_val;
 
 		let mut future_val = 0.0;
 
@@ -354,7 +353,7 @@ impl Reactor {
 					},
 					Some(id) => if state.is_basic_trash(id) {
 						future_val += 1.0;
-					} else if game.me().is_sieved(&game.frame(), state.deck[order].id().unwrap(), order) {
+					} else if game.me().is_sieved(&game.frame(), id, order) {
 						future_val += 0.5;
 					} else if state.is_critical(id) {
 						future_val -= (5.0 - state.playable_away(id) as f32) * 10.0;
@@ -413,7 +412,7 @@ impl Reactor {
 
 		// value += locked_val;
 
-		info!("future: {future_val}, bdr: {bdr_val}");
+		info!("state: {state_val}, future: {future_val}, bdr: {bdr_val}");
 		value
 	}
 }

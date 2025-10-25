@@ -117,7 +117,7 @@ fn simulate_game(deck: &[Identity], variant: &Variant) -> GameSummary {
 	}
 
 	let target = games[0].state.last_player_index(games[0].state.current_player_index);
-	actions.push(PerformAction::Terminate {  target, value: 0 });
+	actions.push(PerformAction::Terminate { target, value: 0 });
 
 	let State { strikes, max_ranks, .. } = &games[0].state;
 

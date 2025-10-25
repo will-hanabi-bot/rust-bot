@@ -14,7 +14,7 @@ use crate::basics::variant::{all_ids};
 use winnable::SimpleResult;
 
 type Frac = fraction::Fraction;
-type RemainingMap = HashMap<Identity,RemainingEntry>;
+type RemainingMap = HashMap<Identity, RemainingEntry>;
 mod winnable;
 
 type WinnableResult = Result<(Vec<PerformAction>, Frac), &'static str>;
@@ -206,7 +206,7 @@ impl EndgameSolver {
 
 		let mut best_performs: HashMap<PerformAction, (Frac, usize)> = HashMap::new();
 
-		let mut eval = |e_game: &Game, GameArr { prob, remaining, .. }| {
+		let mut eval = |e_game: &Game, GameArr { prob, remaining, .. } | {
 			let Game { state: e_state, .. } = e_game;
 			info!("\n{}", format!("arrangement {} {}", e_state.our_hand().iter().map(|&o| e_state.log_iden(&e_game.state.deck[o])).join(","), prob).purple());
 			let all_actions = self.possible_actions(e_game, state.our_player_index, &remaining, &deadline);
@@ -225,7 +225,7 @@ impl EndgameSolver {
 				info!("arrangement winnable! {} (winrate {})", performs.iter().map(|perform| perform.fmt(e_game)).join(","), winrate);
 				for perform in performs {
 					let index = best_performs.len();
-					best_performs.entry(perform).and_modify(|(w,_)| *w += winrate * prob).or_insert((winrate * prob, index));
+					best_performs.entry(perform).and_modify(|(w, _)| *w += winrate * prob).or_insert((winrate * prob, index));
 				}
 			}
 		};
@@ -307,7 +307,7 @@ impl EndgameSolver {
 
 		let bottom_decked = !remaining.is_empty() && remaining.keys().all(|id| state.is_critical(*id) && id.rank != 5);
 
-		if EndgameSolver::unwinnable_state(state, player_turn) || bottom_decked {
+		if bottom_decked || EndgameSolver::unwinnable_state(state, player_turn) {
 			// info!("unwinnable");
 			self.simple_cache.insert(hash, UNWINNABLE);
 			return UNWINNABLE;
@@ -417,7 +417,7 @@ impl EndgameSolver {
 
 				for perform in game.convention.find_all_clues(game, player_turn) {
 					actions.push((perform, Vec::new()));
-				if fully_known {
+					if fully_known {
 						break;
 					}
 				}
@@ -473,6 +473,11 @@ impl EndgameSolver {
 			let hypo_games = if perform.is_clue() { &undrawn } else { &drawn };
 
 			for GameArr { prob, remaining, drew } in hypo_games {
+				if action_winrate + rem_prob <= best_winrate {
+					break;
+				}
+				rem_prob -= prob;
+
 				if let Some(id) = drew && !winnable_draws.contains(id) {
 					// Drew an unwinnable identity
 					continue;
@@ -526,12 +531,6 @@ impl EndgameSolver {
 					}
 				};
 				info!("{}", if depth == 0 { res.yellow() } else { res.white() });
-
-				rem_prob -= prob;
-
-				if action_winrate + rem_prob <= best_winrate {
-					break;
-				}
 			}
 
 			while depth >= self.success_rate.len() {
@@ -586,7 +585,7 @@ impl EndgameSolver {
 			drawn.push(GameArr { prob: Frac::new(*missing as u64, state.cards_left as u64), remaining: new_remaining, drew: Some(*id) });
 
 			if all_trash {
-				info!("{}short-circuiting all remaining trash!", (0..depth).map(|_| "  ").join(""),);
+				info!("{}short-circuiting all remaining trash!", (0..depth).map(|_| "  ").join(""));
 				drawn[0].prob = Frac::ONE;
 				break;
 			}

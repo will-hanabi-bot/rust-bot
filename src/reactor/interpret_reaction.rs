@@ -148,9 +148,9 @@ impl Reactor {
 	}
 
 	fn target_idiscard(prev: &Game, game: &mut Game, wc: &WaitingConnection, target_slot: usize) {
-		let Game { common, state, meta, .. } = game;
+		let Game { common, state, .. } = game;
 		let order = wc.receiver_hand[target_slot - 1];
-		let meta = &mut meta[order];
+		let meta = &mut game.meta[order];
 
 		common.thoughts[order].old_inferred = Some(common.thoughts[order].inferred);
 		common.thoughts[order].inferred.retain(|i| !prev.state.is_critical(i));

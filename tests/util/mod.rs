@@ -81,13 +81,13 @@ pub fn setup(convention: Arc<dyn Convention + Send + Sync + 'static>, hands: &[&
 				panic!("Invalid play stacks length");
 			}
 			state.play_stacks = stacks.to_vec();
+
+			for player in players {
+				player.hypo_stacks = state.play_stacks.clone();
+			}
+			common.hypo_stacks = state.play_stacks.clone();
 		}
 	}
-
-	for player in players {
-		player.hypo_stacks = state.play_stacks.clone();
-	}
-	common.hypo_stacks = state.play_stacks.clone();
 
     let mut order_counter = 0;
 
@@ -172,7 +172,7 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 	};
 
 	if turn_taker != state.current_player_index {
-		panic!("Expected {}'s turn for action ({})!", state.player_names[turn_taker], action.fmt(state));
+		panic!("Expected {}'s turn for action ({})!", state.player_names[state.current_player_index], action.fmt(state));
 	}
 
 	game.catchup = true;
@@ -223,7 +223,6 @@ pub fn take_turn(game: &mut Game, raw_action: &str) {
 }
 
 fn parse_slots(state: &State, parts: &Vec<&str>, parts_index: usize, expect_one: bool, insufficient_msg: &str) -> Vec<usize> {
-
 	if parts.len() < parts_index + 1 || !parts[parts_index - 1].contains("slot") {
 		panic!("Not enough arguments provided {} in '{}', needs '(slot x)'", insufficient_msg, parts.join(" "));
 	}

@@ -112,13 +112,12 @@ async fn main() {
 	}
 
 	for action in actions {
-		let mut player_index = game.state.current_player_index;
+		let player_index = game.state.current_player_index;
 		game.handle_action(&util::perform_to_action(&game.state, &action, player_index, Some(&deck)));
 
 		if game.state.card_order < deck.len() {
 			match action {
 				PerformAction::Play { .. } | PerformAction::Discard { .. } => {
-					let player_index = player_index;
 					let order = game.state.card_order;
 
 					game.handle_action(&Action::Draw(DrawAction {
@@ -138,8 +137,8 @@ async fn main() {
 			}
 		}
 
-		player_index = game.state.next_player_index(game.state.current_player_index);
-		game.handle_action(&Action::Turn(TurnAction { num: game.state.turn_count, current_player_index: player_index as i32 }));
+		let next_player_index = game.state.next_player_index(game.state.current_player_index);
+		game.handle_action(&Action::Turn(TurnAction { num: game.state.turn_count, current_player_index: next_player_index as i32 }));
 	}
 
 	game.catchup = false;

@@ -62,7 +62,7 @@ fn it_visibly_elims_mixed_cards() {
 		&["g2", "b1", "r4", "r5", "y3"],
 		&["y5", "p1", "b3", "b5", "g3"],
 	], TestOptions {
-		starting: Player::Donald,
+		starting: Player::Alice,
 		play_stacks: Some(&[3, 0, 0, 0, 0]),
 		discarded: &["r1", "r1", "r2", "r3"],
 		init: Box::new(|game: &mut Game| {
@@ -75,7 +75,7 @@ fn it_visibly_elims_mixed_cards() {
 		}),
 		..TestOptions::default() });
 
-	// Everyone knows that ALice's card is known r4.
+	// Everyone knows that Alice's card is known r4.
 	ex_asserts::has_possible(&game, None, Player::Alice, 5, &["r4"]);
 
 	// Bob's cards could be r4 or r5.

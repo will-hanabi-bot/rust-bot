@@ -326,18 +326,18 @@ impl Reactor {
 		let mut hypo_state = prev.state.clone();
 		for i in players_upto(state.num_players, state.next_player_index(*giver), reacter) {
 			let mut playables = prev.common.obvious_playables(&Frame::new(&hypo_state, &prev.meta), i);
-			if let Some(urgent) = playables.iter().find(|&&o| meta[o].urgent) {
+			if let Some(urgent) = playables.iter().find(|&&o| prev.meta[o].urgent) {
 				playables = vec![*urgent];
 			}
 
-			if let Some(order) = playables.first() && let Some(id) = state.deck[*order].id() && hypo_state.play_stacks[id.suit_index] + 1 == id.rank {
+			if let Some(order) = playables.first() && let Some(id) = state.deck[*order].id() && hypo_state.is_playable(id) {
 				hypo_state.play_stacks[id.suit_index] += 1;
 			}
 		}
 
 		// The receiver can also play their own known playables first
 		for self_playable in prev.common.obvious_playables(&Frame::new(&hypo_state, &prev.meta), *receiver) {
-			if let Some(id) = state.deck[self_playable].id() && hypo_state.play_stacks[id.suit_index] + 1 == id.rank {
+			if let Some(id) = state.deck[self_playable].id() && hypo_state.is_playable(id) {
 				hypo_state.play_stacks[id.suit_index] += 1;
 			}
 		}
@@ -345,7 +345,7 @@ impl Reactor {
 		match clue.kind {
 			ClueKind::COLOUR => {
 				let play_targets = state.hands[*receiver].iter().enumerate()
-					.filter(|&(_, o)| meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| hypo_state.play_stacks[i.suit_index] + 1 == i.rank))
+					.filter(|&(_, o)| meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| hypo_state.is_playable(i)))
 					.sorted_by_key(|&(i, o)|
 						// Unclued dupe, with a clued dupe
 						if !prev.state.deck[*o].clued && state.hands[*receiver].iter().any(|o2| o2 < o && prev.state.deck[*o2].clued && state.deck[*o].is(&state.deck[*o2])) {
@@ -458,7 +458,9 @@ impl Reactor {
 			}
 			ClueKind::RANK => {
 				let play_targets = state.hands[*receiver].iter().enumerate().filter(|&(_, o)|
-					meta[*o].status != CardStatus::CalledToDiscard && !known_plays.contains(&o) && state.deck[*o].id().is_some_and(|i| hypo_state.play_stacks[i.suit_index] + 1 == i.rank)
+					meta[*o].status != CardStatus::CalledToDiscard &&
+					!known_plays.contains(&o) &&
+					state.deck[*o].id().is_some_and(|i| hypo_state.is_playable(i))
 				).sorted_by_key(|(i, o)| {
 					// Do not target an unclued copy when there is a clued copy
 					let unclued_dupe = !prev.state.deck[**o].clued && state.hands[*receiver].iter().any(|o2| &o2 != o && prev.state.deck[*o2].clued && state.deck[**o].is(&state.deck[*o2]));

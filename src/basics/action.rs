@@ -286,19 +286,19 @@ impl PerformAction {
 		let Game { state, deck_ids, .. }  = game;
 
 		let action_type = match self {
-			PerformAction::Play { target, .. } => {
+			PerformAction::Play { target } => {
 				format!("play {}, order {}", state.log_oid(&deck_ids[*target]), target)
 			}
-			PerformAction::Discard { target, .. } => {
+			PerformAction::Discard { target } => {
 				format!("discard {}, order {}", state.log_oid(&deck_ids[*target]), target)
 			}
-			PerformAction::Colour { target, value, .. } => {
+			PerformAction::Colour { target, value } => {
 				(Clue { kind: ClueKind::COLOUR, value: *value, target: *target }).fmt(state)
 			}
-			PerformAction::Rank { target, value, .. } => {
+			PerformAction::Rank { target, value } => {
 				(Clue { kind: ClueKind::RANK, value: *value, target: *target }).fmt(state)
 			}
-			PerformAction::Terminate { target, value, .. } => {
+			PerformAction::Terminate { target, value } => {
 				format!("Game ended: {target} {value}")
 			}
 		};
